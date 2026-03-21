@@ -6,6 +6,35 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 
+def test_calculate_change_up():
+    """calculate_change retorna 'up' cuando sube."""
+    from src.services.rates_service import calculate_change
+    
+    result = calculate_change(370.0, 365.0)
+    assert result == 'up'
+
+def test_calculate_change_down():
+    """calculate_change retorna 'down' cuando baja."""
+    from src.services.rates_service import calculate_change
+    
+    result = calculate_change(360.0, 365.0)
+    assert result == 'down'
+
+def test_calculate_change_neutral():
+    """calculate_change retorna 'neutral' cuando no cambia (tolerancia 0.0001)."""
+    from src.services.rates_service import calculate_change
+    
+    result = calculate_change(365.00005, 365.0)
+    assert result == 'neutral'
+
+def test_calculate_change_none():
+    """calculate_change retorna 'neutral' si no hay previous."""
+    from src.services.rates_service import calculate_change
+    
+    result = calculate_change(365.0, None)
+    assert result == 'neutral'
+
+
 @pytest.mark.asyncio
 async def test_fetch_all_sources_returns_all_four_sources():
     """fetch_all_sources ejecuta los 4 scrapers en paralelo."""

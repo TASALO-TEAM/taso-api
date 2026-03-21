@@ -1,7 +1,7 @@
 """Rates business logic service."""
 
 import asyncio
-from typing import Any
+from typing import Any, Literal
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
@@ -12,6 +12,38 @@ from src.scrapers.binance import fetch_binance
 from src.scrapers.cadeca import fetch_cadeca
 from src.scrapers.bcc import fetch_bcc
 from src.models.rate_snapshot import RateSnapshot
+
+
+# Legacy: tolerancia de legacy/tasa.py (TOLERANCIA = 0.0001)
+CHANGE_TOLERANCE = 0.0001
+
+ChangeDirection = Literal['up', 'down', 'neutral']
+
+
+def calculate_change(current: float, previous: float | None) -> ChangeDirection:
+    """
+    Calcula dirección del cambio entre tasa actual y anterior.
+    
+    Legacy pattern: lógica de comparación de legacy/tasa.py
+    
+    Args:
+        current: Tasa actual
+        previous: Tasa anterior (None si no hay historial)
+    
+    Returns:
+        'up' si subió, 'down' si bajó, 'neutral' si no cambió significativamente
+    """
+    if previous is None:
+        return 'neutral'
+    
+    difference = current - previous
+    
+    if difference > CHANGE_TOLERANCE:
+        return 'up'
+    elif difference < -CHANGE_TOLERANCE:
+        return 'down'
+    else:
+        return 'neutral'
 
 
 async def _fetch_safe(coro_func, timeout_secs: int, source_name: str) -> Any:
