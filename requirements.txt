@@ -1,0 +1,25 @@
+# Web Framework
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+
+# Database
+sqlalchemy[asyncio]==2.0.30
+alembic==1.13.0
+
+# Drivers de base de datos
+aiosqlite==0.20.0      # SQLite async para desarrollo
+asyncpg==0.29.0        # PostgreSQL async para producción
+
+# Settings
+pydantic-settings==2.2.0
+python-dotenv==1.0.0
+
+# HTTP Client (para scrapers en fases futuras)
+httpx==0.27.0
+
+# Web Scraping (para fases futuras)
+beautifulsoup4==4.12.0
+lxml==5.1.0
+
+# Scheduler (para fases futuras)
+apscheduler==3.10.4
