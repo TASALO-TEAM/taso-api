@@ -2,6 +2,8 @@
 
 import pytest
 from unittest.mock import AsyncMock, patch
+from datetime import datetime, timezone
+from sqlalchemy import select
 
 
 @pytest.mark.asyncio
@@ -50,3 +52,58 @@ async def test_fetch_all_sources_handles_individual_failures():
         assert result['binance'] is not None
         assert result['cadeca'] is not None
         assert result['bcc'] is not None
+
+
+@pytest.mark.asyncio
+async def test_save_snapshot_eltoque_inserts_records():
+    """save_snapshot persiste datos de ElToque en rate_snapshots."""
+    from src.services.rates_service import save_snapshot
+    from src.database import async_session_factory
+    from src.models.rate_snapshot import RateSnapshot
+    
+    eltoque_data = {
+        'tasas': {'USD': 365.50, 'EUR': 398.00},
+        'date': '2026-03-21',
+        'hour': 14,
+        'minutes': 30
+    }
+    
+    async with async_session_factory() as session:
+        await save_snapshot(session, 'eltoque', eltoque_data)
+        await session.commit()
+        
+        # Verificar que se guardó
+        stmt = select(RateSnapshot).where(RateSnapshot.source == 'eltoque').order_by(RateSnapshot.fetched_at.desc())
+        result = await session.execute(stmt)
+        snapshots = result.scalars().all()
+        
+        assert len(snapshots) >= 2  # USD y EUR
+        usd_snapshot = next((s for s in snapshots if s.currency == 'USD'), None)
+        assert usd_snapshot is not None
+        assert usd_snapshot.sell_rate == 365.50
+
+
+@pytest.mark.asyncio
+async def test_save_snapshot_cadeca_inserts_buy_sell():
+    """save_snapshot persiste compra/venta para CADECA."""
+    from src.services.rates_service import save_snapshot
+    from src.database import async_session_factory
+    from src.models.rate_snapshot import RateSnapshot
+    
+    cadeca_data = {
+        'USD': {'compra': 120.00, 'venta': 125.00},
+        'EUR': {'compra': 130.00, 'venta': 135.00}
+    }
+    
+    async with async_session_factory() as session:
+        await save_snapshot(session, 'cadeca', cadeca_data)
+        await session.commit()
+        
+        from sqlalchemy import select
+        stmt = select(RateSnapshot).where(RateSnapshot.source == 'cadeca')
+        result = await session.execute(stmt)
+        snapshots = result.scalars().all()
+        
+        usd_snapshot = next((s for s in snapshots if s.currency == 'USD'), None)
+        assert usd_snapshot.buy_rate == 120.00
+        assert usd_snapshot.sell_rate == 125.00
