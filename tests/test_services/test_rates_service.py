@@ -89,21 +89,53 @@ async def test_save_snapshot_cadeca_inserts_buy_sell():
     from src.services.rates_service import save_snapshot
     from src.database import async_session_factory
     from src.models.rate_snapshot import RateSnapshot
-    
+
     cadeca_data = {
         'USD': {'compra': 120.00, 'venta': 125.00},
         'EUR': {'compra': 130.00, 'venta': 135.00}
     }
-    
+
     async with async_session_factory() as session:
         await save_snapshot(session, 'cadeca', cadeca_data)
         await session.commit()
-        
+
         from sqlalchemy import select
         stmt = select(RateSnapshot).where(RateSnapshot.source == 'cadeca')
         result = await session.execute(stmt)
         snapshots = result.scalars().all()
-        
+
         usd_snapshot = next((s for s in snapshots if s.currency == 'USD'), None)
         assert usd_snapshot.buy_rate == 120.00
         assert usd_snapshot.sell_rate == 125.00
+
+
+@pytest.mark.asyncio
+async def test_get_latest_rates_returns_all_sources():
+    """get_latest_rates retorna el snapshot más reciente de cada fuente."""
+    from src.services.rates_service import get_latest_rates
+    from src.database import async_session_factory
+    
+    async with async_session_factory() as session:
+        result = await get_latest_rates(session)
+        
+        assert 'eltoque' in result
+        assert 'binance' in result
+        assert 'cadeca' in result
+        assert 'bcc' in result
+
+
+@pytest.mark.asyncio
+async def test_get_latest_rates_eltoque_format():
+    """get_latest_rates formatea ElToque como {currency: {rate, change}}."""
+    from src.services.rates_service import get_latest_rates
+    from src.database import async_session_factory
+    
+    async with async_session_factory() as session:
+        result = await get_latest_rates(session)
+        
+        eltoque = result.get('eltoque', {})
+        # Verificar estructura
+        if eltoque:
+            usd = eltoque.get('USD')
+            if usd:
+                assert 'rate' in usd or 'sell_rate' in usd

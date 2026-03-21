@@ -4,6 +4,7 @@ import asyncio
 from typing import Any
 from datetime import datetime, timezone
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.scrapers.eltoque import fetch_eltoque
@@ -172,3 +173,65 @@ async def save_snapshot(session: AsyncSession, source: str, data: Any) -> None:
     
     session.add_all(snapshots)
     print(f"✅ Guardados {len(snapshots)} snapshots de {source}")
+
+
+async def get_latest_rates(session: AsyncSession) -> dict[str, dict]:
+    """
+    Obtiene el snapshot más reciente de cada fuente.
+    
+    Returns:
+        dict con estructura:
+        {
+            'eltoque': {'USD': {'rate': 365.0, 'change': 'up'}},
+            'binance': {'BTC': {'rate': 45000.0}},
+            'cadeca': {'USD': {'buy': 120.0, 'sell': 125.0}},
+            'bcc': {'USD': {'rate': 125.0}}
+        }
+    """
+    result = {}
+    
+    for source in ['eltoque', 'binance', 'cadeca', 'bcc']:
+        # Subquery para obtener el fetched_at más reciente por fuente
+        subquery = (
+            select(func.max(RateSnapshot.fetched_at))
+            .where(RateSnapshot.source == source)
+            .scalar_subquery()
+        )
+        
+        # Obtener todos los registros con ese fetched_at
+        stmt = select(RateSnapshot).where(
+            RateSnapshot.source == source,
+            RateSnapshot.fetched_at == subquery
+        )
+        
+        query_result = await session.execute(stmt)
+        snapshots = query_result.scalars().all()
+        
+        if not snapshots:
+            result[source] = {}
+            continue
+        
+        # Formatear según fuente
+        if source == 'eltoque' or source == 'binance' or source == 'bcc':
+            formatted = {}
+            for snap in snapshots:
+                rate = snap.sell_rate  # Usar sell_rate como principal
+                if rate:
+                    formatted[snap.currency] = {
+                        'rate': float(rate),
+                        'fetched_at': snap.fetched_at.isoformat()
+                    }
+            result[source] = formatted
+            
+        elif source == 'cadeca':
+            formatted = {}
+            for snap in snapshots:
+                if snap.buy_rate or snap.sell_rate:
+                    formatted[snap.currency] = {
+                        'buy': float(snap.buy_rate) if snap.buy_rate else None,
+                        'sell': float(snap.sell_rate) if snap.sell_rate else None,
+                        'fetched_at': snap.fetched_at.isoformat()
+                    }
+            result[source] = formatted
+    
+    return result
