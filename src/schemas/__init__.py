@@ -10,6 +10,14 @@ from src.schemas.rates import (
     HistoryResponse,
 )
 
+from src.schemas.admin import (
+    SchedulerStatusResponse,
+    AdminStatusResponse,
+    RefreshResult,
+    RefreshData,
+    RefreshResponse,
+)
+
 __all__ = [
     "CurrencyRate",
     "SourceRatesResponse",
@@ -18,4 +26,9 @@ __all__ = [
     "HistoryQueryParams",
     "HistorySnapshot",
     "HistoryResponse",
+    "SchedulerStatusResponse",
+    "AdminStatusResponse",
+    "RefreshResult",
+    "RefreshData",
+    "RefreshResponse",
 ]

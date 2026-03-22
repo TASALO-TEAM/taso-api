@@ -22,7 +22,7 @@ def test_health_endpoint(client):
 
     assert data["ok"] is True
     assert "version" in data
-    assert data["version"] == "1.3.0"
+    assert data["version"] == "1.4.0"
     assert "db" in data
     assert data["db"] in ["connected", "disconnected"]
 
@@ -41,4 +41,4 @@ def test_openapi_json(client):
     data = response.json()
     assert "openapi" in data
     assert data["info"]["title"] == "TASALO API"
-    assert data["info"]["version"] == "1.3.0"
+    assert data["info"]["version"] == "1.4.0"
