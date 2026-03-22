@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from src.config import get_settings
 from src.database import get_engine, get_session_maker
+from src.routers import rates as rates_router
 from src.services.scheduler import create_scheduler
 
 settings = get_settings()
@@ -55,7 +56,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="TASALO API",
     description="API para tasas de cambio en Cuba. Agrega datos de ElToque, CADECA, BCC y Binance.",
-    version="1.2.0",
+    version="1.3.0",
     lifespan=lifespan,
 )
 
@@ -68,6 +69,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Registrar routers
+app.include_router(rates_router.router, prefix="/api/v1/tasas", tags=["Tasas"])
+
 
 @app.get("/api/v1/health", tags=["Health"])
 async def health_check():
@@ -79,7 +83,7 @@ async def health_check():
     """
     return {
         "ok": True,
-        "version": "1.2.0",
+        "version": "1.3.0",
         "db": "connected" if app.state.db_connected else "disconnected",
         "database_url": settings.database_url.split("://")[0],  # Solo el tipo
     }

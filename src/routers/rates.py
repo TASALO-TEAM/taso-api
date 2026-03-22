@@ -1,0 +1,204 @@
+"""Router para endpoints públicos de tasas."""
+
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, Query
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.database import get_db
+from src.services import rates_service
+from src.schemas.rates import (
+    CurrencyRate,
+    LatestRatesResponse,
+    LatestRatesData,
+    SourceRatesResponse,
+    HistoryResponse,
+    HistorySnapshot,
+    HistoryQueryParams,
+)
+
+
+router = APIRouter()
+
+
+@router.get("/latest", response_model=LatestRatesResponse)
+async def get_latest_rates(
+    db: AsyncSession = Depends(get_db)
+) -> LatestRatesResponse:
+    """
+    Obtiene las últimas tasas de todas las fuentes combinadas.
+
+    Incluye indicadores de cambio (up/down/neutral) comparados con el snapshot anterior.
+    """
+    rates_data = await rates_service.get_latest_rates(db)
+
+    # Encontrar el updated_at más reciente entre todas las fuentes
+    updated_at = datetime.now(timezone.utc)
+
+    # Formatear datos para los schemas
+    eltoque_rates = {}
+    cadeca_rates = {}
+    bcc_rates = {}
+    binance_rates = {}
+
+    for source, rates in rates_data.items():
+        formatted_rates = {}
+        for currency, rate_info in rates.items():
+            if source == 'cadeca':
+                # CADECA tiene buy/sell, usar sell_rate como principal
+                formatted_rates[currency] = CurrencyRate(
+                    rate=rate_info.get('sell', 0) or 0,
+                    change=rate_info.get('change', 'neutral'),
+                    prev_rate=rate_info.get('prev_rate')
+                )
+            else:
+                # Otras fuentes usan rate único
+                formatted_rates[currency] = CurrencyRate(
+                    rate=rate_info.get('rate', 0) or 0,
+                    change=rate_info.get('change', 'neutral'),
+                    prev_rate=rate_info.get('prev_rate')
+                )
+
+        if source == 'eltoque':
+            eltoque_rates = formatted_rates
+        elif source == 'cadeca':
+            cadeca_rates = formatted_rates
+        elif source == 'bcc':
+            bcc_rates = formatted_rates
+        elif source == 'binance':
+            binance_rates = formatted_rates
+
+    return LatestRatesResponse(
+        ok=True,
+        data=LatestRatesData(
+            eltoque=eltoque_rates,
+            cadeca=cadeca_rates,
+            bcc=bcc_rates,
+            binance=binance_rates
+        ),
+        updated_at=updated_at
+    )
+
+
+@router.get("/eltoque", response_model=SourceRatesResponse)
+async def get_eltoque_rates(
+    db: AsyncSession = Depends(get_db)
+) -> SourceRatesResponse:
+    """
+    Obtiene las últimas tasas de ElToque (mercado informal).
+
+    Incluye indicadores de cambio (up/down/neutral) comparados con el snapshot anterior.
+    """
+    rates, updated_at = await rates_service.get_source_rates(db, 'eltoque')
+
+    formatted_rates = {}
+    for currency, rate_info in rates.items():
+        formatted_rates[currency] = CurrencyRate(
+            rate=rate_info.get('rate', 0) or 0,
+            change=rate_info.get('change', 'neutral'),
+            prev_rate=rate_info.get('prev_rate')
+        )
+
+    return SourceRatesResponse(
+        source='eltoque',
+        rates=formatted_rates,
+        updated_at=updated_at or datetime.now(timezone.utc)
+    )
+
+
+@router.get("/cadeca", response_model=SourceRatesResponse)
+async def get_cadeca_rates(
+    db: AsyncSession = Depends(get_db)
+) -> SourceRatesResponse:
+    """
+    Obtiene las últimas tasas de CADECA (oficial, compra/venta).
+
+    Incluye indicadores de cambio (up/down/neutral) comparados con el snapshot anterior.
+    """
+    rates, updated_at = await rates_service.get_source_rates(db, 'cadeca')
+
+    formatted_rates = {}
+    for currency, rate_info in rates.items():
+        # Para CADECA, usar sell_rate como rate principal
+        formatted_rates[currency] = CurrencyRate(
+            rate=rate_info.get('sell', 0) or 0,
+            change=rate_info.get('change', 'neutral'),
+            prev_rate=rate_info.get('prev_rate')
+        )
+
+    return SourceRatesResponse(
+        source='cadeca',
+        rates=formatted_rates,
+        updated_at=updated_at or datetime.now(timezone.utc)
+    )
+
+
+@router.get("/bcc", response_model=SourceRatesResponse)
+async def get_bcc_rates(
+    db: AsyncSession = Depends(get_db)
+) -> SourceRatesResponse:
+    """
+    Obtiene las últimas tasas de BCC (Banco Central de Cuba, oficial).
+
+    Incluye indicadores de cambio (up/down/neutral) comparados con el snapshot anterior.
+    """
+    rates, updated_at = await rates_service.get_source_rates(db, 'bcc')
+
+    formatted_rates = {}
+    for currency, rate_info in rates.items():
+        formatted_rates[currency] = CurrencyRate(
+            rate=rate_info.get('rate', 0) or 0,
+            change=rate_info.get('change', 'neutral'),
+            prev_rate=rate_info.get('prev_rate')
+        )
+
+    return SourceRatesResponse(
+        source='bcc',
+        rates=formatted_rates,
+        updated_at=updated_at or datetime.now(timezone.utc)
+    )
+
+
+@router.get("/history", response_model=HistoryResponse)
+async def get_history(
+    source: str = Query(
+        default="eltoque",
+        description="Fuente de datos (eltoque, cadeca, bcc, binance)"
+    ),
+    currency: str = Query(
+        default="USD",
+        description="Moneda a consultar"
+    ),
+    days: int = Query(
+        default=7,
+        ge=1,
+        le=365,
+        description="Días de histórico (1-365)"
+    ),
+    db: AsyncSession = Depends(get_db)
+) -> HistoryResponse:
+    """
+    Obtiene histórico de tasas para una fuente y moneda específicas.
+
+    - **source**: Fuente de datos (eltoque, cadeca, bcc, binance)
+    - **currency**: Moneda a consultar (USD, EUR, etc.)
+    - **days**: Días de histórico (1-365, default: 7)
+    """
+    snapshots = await rates_service.get_history(db, source, currency, days)
+
+    formatted_data = [
+        HistorySnapshot(
+            source=snap.source,
+            currency=snap.currency,
+            buy_rate=float(snap.buy_rate) if snap.buy_rate else None,
+            sell_rate=float(snap.sell_rate) if snap.sell_rate else None,
+            fetched_at=snap.fetched_at
+        )
+        for snap in snapshots
+    ]
+
+    return HistoryResponse(
+        ok=True,
+        data=formatted_data,
+        count=len(formatted_data)
+    )

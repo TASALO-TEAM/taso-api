@@ -56,3 +56,20 @@ def get_session_maker(engine):
         class_=AsyncSession,
         expire_on_commit=False,
     )
+
+
+async def get_db():
+    """
+    Dependency provider para FastAPI.
+    Yield una sesión de base de datos asíncrona.
+
+    Usage:
+        @app.get("/")
+        async def endpoint(db: AsyncSession = Depends(get_db)):
+            ...
+    """
+    async with async_session_factory() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
