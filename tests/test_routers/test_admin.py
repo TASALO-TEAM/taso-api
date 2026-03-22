@@ -46,9 +46,11 @@ class TestAdminAuth:
     ):
         """Endpoint admin sin auth debe retornar 401."""
         response = client.get("/api/v1/admin/status", headers=no_auth_headers)
-        
+
         assert response.status_code == 401
-        assert response.json()["detail"] == "X-API-Key header is required"
+        data = response.json()
+        assert "error" in data
+        assert "X-API-Key" in data["error"]["message"]
 
     def test_admin_endpoint_with_invalid_auth_returns_401(
         self,
@@ -57,9 +59,11 @@ class TestAdminAuth:
     ):
         """Endpoint admin con API key inválida debe retornar 401."""
         response = client.get("/api/v1/admin/status", headers=invalid_auth_headers)
-        
+
         assert response.status_code == 401
-        assert response.json()["detail"] == "Invalid API key"
+        data = response.json()
+        assert "error" in data
+        assert "API key" in data["error"]["message"]
 
 
 class TestAdminRefreshEndpoint:
