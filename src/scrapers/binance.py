@@ -5,22 +5,25 @@ import httpx
 from typing import Optional, Dict, Any, List
 
 
-DEFAULT_SYMBOLS = ["BTCUSDT", "ETHUSDT", "USDTUSDT"]
+DEFAULT_SYMBOLS = ["BTCUSD", "ETHUSD", "USDTUSD"]
+
+# Binance US API para entornos en Estados Unidos
+BINANCE_US_URL = "https://api.binance.us/api/v3/ticker/price"
 
 
 async def fetch_binance(
     symbols: Optional[List[str]] = None,
-    base_url: str = "https://api.binance.com/api/v3/ticker/price",
+    base_url: str = BINANCE_US_URL,
     timeout: float = 10.0
 ) -> Optional[Dict[str, float]]:
     """
-    Obtiene precios de criptomonedas de Binance.
-    
+    Obtiene precios de criptomonedas de Binance US.
+
     Args:
-        symbols: Lista de símbolos a consultar (default: BTC, ETH, USDT)
-        base_url: URL base de la API de Binance
+        symbols: Lista de símbolos a consultar (default: BTC, ETH, USDT en pares USD)
+        base_url: URL base de la API de Binance US (default para entornos en EE.UU.)
         timeout: Timeout en segundos
-        
+
     Returns:
         Dict con símbolo -> precio o None si hay error
     """
