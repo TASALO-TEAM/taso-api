@@ -146,17 +146,17 @@ alembic current
 
 ```bash
 # Desarrollo (auto-reload)
-uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn src.main:app --reload --host 0.0.0.0 --port 8040
 
 # Producción (sin reload, múltiples workers)
-uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 4
+uvicorn src.main:app --host 0.0.0.0 --port 8040 --workers 4
 ```
 
 ### 7. Verificar funcionamiento
 
 ```bash
 # Health check
-curl http://localhost:8000/api/v1/health
+curl http://localhost:8040/api/v1/health
 
 # Expected response:
 # {"ok":true,"version":"1.5.0","db":"connected","database_url":"sqlite"}
@@ -209,7 +209,7 @@ ALLOWED_ORIGINS=https://tasalo.app,https://bot.tasalo.app
 Verificar estado de la aplicación.
 
 ```bash
-curl http://localhost:8000/api/v1/health
+curl http://localhost:8040/api/v1/health
 ```
 
 **Respuesta:**
@@ -228,7 +228,7 @@ curl http://localhost:8000/api/v1/health
 Obtener tasas combinadas de todas las fuentes con indicadores de cambio.
 
 ```bash
-curl http://localhost:8000/api/v1/tasas/latest
+curl http://localhost:8040/api/v1/tasas/latest
 ```
 
 **Respuesta:**
@@ -254,7 +254,7 @@ curl http://localhost:8000/api/v1/tasas/latest
 Obtener solo tasas de ElToque (mercado informal).
 
 ```bash
-curl http://localhost:8000/api/v1/tasas/eltoque
+curl http://localhost:8040/api/v1/tasas/eltoque
 ```
 
 ---
@@ -263,7 +263,7 @@ curl http://localhost:8000/api/v1/tasas/eltoque
 Obtener solo tasas de CADECA (compra/venta).
 
 ```bash
-curl http://localhost:8000/api/v1/tasas/cadeca
+curl http://localhost:8040/api/v1/tasas/cadeca
 ```
 
 ---
@@ -272,7 +272,7 @@ curl http://localhost:8000/api/v1/tasas/cadeca
 Obtener solo tasas de BCC (oficiales).
 
 ```bash
-curl http://localhost:8000/api/v1/tasas/bcc
+curl http://localhost:8040/api/v1/tasas/bcc
 ```
 
 ---
@@ -286,7 +286,7 @@ Obtener histórico de tasas para gráficas.
 - `days` (opcional): Días de histórico (1-365, default: 7)
 
 ```bash
-curl "http://localhost:8000/api/v1/tasas/history?source=eltoque&currency=USD&days=7"
+curl "http://localhost:8040/api/v1/tasas/history?source=eltoque&currency=USD&days=7"
 ```
 
 **Respuesta:**
@@ -320,7 +320,7 @@ Todos los endpoints admin requieren el header `X-API-Key` con el valor configura
 Obtener estado del scheduler (última ejecución, errores).
 
 ```bash
-curl http://localhost:8000/api/v1/admin/status \
+curl http://localhost:8040/api/v1/admin/status \
   -H "X-API-Key: tu_admin_api_key"
 ```
 
@@ -343,7 +343,7 @@ curl http://localhost:8000/api/v1/admin/status \
 Disparar refresh manual inmediato de todas las fuentes.
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/admin/refresh \
+curl -X POST http://localhost:8040/api/v1/admin/refresh \
   -H "X-API-Key: tu_admin_api_key"
 ```
 
@@ -365,9 +365,9 @@ curl -X POST http://localhost:8000/api/v1/admin/refresh \
 
 Con el servidor corriendo, acceder a:
 
-- **Swagger UI:** http://localhost:8000/docs
-- **ReDoc:** http://localhost:8000/redoc
-- **OpenAPI JSON:** http://localhost:8000/openapi.json
+- **Swagger UI:** http://localhost:8040/docs
+- **ReDoc:** http://localhost:8040/redoc
+- **OpenAPI JSON:** http://localhost:8040/openapi.json
 
 ---
 
@@ -540,7 +540,7 @@ Type=simple
 User=tasalo
 WorkingDirectory=/opt/taso-api
 Environment="PATH=/opt/taso-api/.venv/bin"
-ExecStart=/opt/taso-api/.venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8000
+ExecStart=/opt/taso-api/.venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8040
 Restart=always
 
 [Install]
@@ -563,7 +563,7 @@ server {
     server_name api.tasalo.app;
 
     location / {
-        proxy_pass http://localhost:8000;
+        proxy_pass http://localhost:8040;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
