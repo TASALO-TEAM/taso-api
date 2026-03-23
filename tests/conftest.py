@@ -7,11 +7,12 @@ from httpx import Request, Response
 @pytest.fixture
 def mock_httpx_response():
     """Factory para crear respuestas mock de httpx."""
+
     def _create_response(
         status_code: int = 200,
         json_data: dict = None,
         text_data: str = None,
-        headers: dict = None
+        headers: dict = None,
     ):
         request = Request("GET", "https://example.com")
         return Response(
@@ -19,8 +20,9 @@ def mock_httpx_response():
             json=json_data,
             text=text_data,
             headers=headers or {},
-            request=request
+            request=request,
         )
+
     return _create_response
 
 
@@ -33,16 +35,13 @@ def eltoque_sample_data() -> dict:
         "minutos": 30,
         "tasas": {
             "USD": 365.00,
-            "EUR": 398.00,
+            "ECU": 398.00,
             "MLC": 210.00,
             "BTC": 9850.50,
             "TRX": 0.25,
-            "USDT_TRC20": 362.00
+            "USDT_TRC20": 362.00,
         },
-        "provincias": {
-            "La Habana": {"tasa": 366.00},
-            "Santiago": {"tasa": 364.50}
-        }
+        "provincias": {"La Habana": {"tasa": 366.00}, "Santiago": {"tasa": 364.50}},
     }
 
 
@@ -52,7 +51,7 @@ def binance_sample_data() -> list:
     return [
         {"symbol": "BTCUSDT", "price": "67500.00"},
         {"symbol": "ETHUSDT", "price": "3450.00"},
-        {"symbol": "USDTUSDT", "price": "1.0001"}
+        {"symbol": "USDTUSDT", "price": "1.0001"},
     ]
 
 
