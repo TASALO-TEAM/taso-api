@@ -23,14 +23,25 @@ router = APIRouter()
 
 @router.get("/latest", response_model=LatestRatesResponse)
 async def get_latest_rates(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    max_age_minutes: int = Query(
+        default=120,
+        ge=5,
+        le=1440,
+        description="Máxima edad de datos en minutos (fallback a histórico si es más viejo)"
+    )
 ) -> LatestRatesResponse:
     """
     Obtiene las últimas tasas de todas las fuentes combinadas.
-
+    
+    ESTRATEGIA RESILIENTE:
+    - Intenta obtener datos frescos de la DB
+    - Si no hay, usa últimos datos históricos disponibles (fallback)
+    - El bot SIEMPRE recibe datos válidos (nunca None)
+    
     Incluye indicadores de cambio (up/down/neutral) comparados con el snapshot anterior.
     """
-    rates_data = await rates_service.get_latest_rates(db)
+    rates_data = await rates_service.get_latest_rates(db, max_age_minutes=max_age_minutes)
 
     # Encontrar el updated_at más reciente entre todas las fuentes
     updated_at = datetime.now(timezone.utc)
@@ -82,14 +93,24 @@ async def get_latest_rates(
 
 @router.get("/eltoque", response_model=SourceRatesResponse)
 async def get_eltoque_rates(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    max_age_minutes: int = Query(
+        default=120,
+        ge=5,
+        le=1440,
+        description="Máxima edad de datos en minutos (fallback a histórico)"
+    )
 ) -> SourceRatesResponse:
     """
     Obtiene las últimas tasas de ElToque (mercado informal).
+    
+    ESTRATEGIA RESILIENTE:
+    - Si no hay datos frescos, usa últimos datos históricos
+    - El bot SIEMPRE recibe datos válidos (nunca None)
 
     Incluye indicadores de cambio (up/down/neutral) comparados con el snapshot anterior.
     """
-    rates, updated_at = await rates_service.get_source_rates(db, 'eltoque')
+    rates, updated_at = await rates_service.get_source_rates(db, 'eltoque', max_age_minutes)
 
     formatted_rates = {}
     for currency, rate_info in rates.items():
@@ -108,14 +129,24 @@ async def get_eltoque_rates(
 
 @router.get("/cadeca", response_model=SourceRatesResponse)
 async def get_cadeca_rates(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    max_age_minutes: int = Query(
+        default=120,
+        ge=5,
+        le=1440,
+        description="Máxima edad de datos en minutos (fallback a histórico)"
+    )
 ) -> SourceRatesResponse:
     """
     Obtiene las últimas tasas de CADECA (oficial, compra/venta).
+    
+    ESTRATEGIA RESILIENTE:
+    - Si no hay datos frescos, usa últimos datos históricos
+    - El bot SIEMPRE recibe datos válidos (nunca None)
 
     Incluye indicadores de cambio (up/down/neutral) comparados con el snapshot anterior.
     """
-    rates, updated_at = await rates_service.get_source_rates(db, 'cadeca')
+    rates, updated_at = await rates_service.get_source_rates(db, 'cadeca', max_age_minutes)
 
     formatted_rates = {}
     for currency, rate_info in rates.items():
@@ -135,14 +166,24 @@ async def get_cadeca_rates(
 
 @router.get("/bcc", response_model=SourceRatesResponse)
 async def get_bcc_rates(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    max_age_minutes: int = Query(
+        default=120,
+        ge=5,
+        le=1440,
+        description="Máxima edad de datos en minutos (fallback a histórico)"
+    )
 ) -> SourceRatesResponse:
     """
     Obtiene las últimas tasas de BCC (Banco Central de Cuba, oficial).
+    
+    ESTRATEGIA RESILIENTE:
+    - Si no hay datos frescos, usa últimos datos históricos
+    - El bot SIEMPRE recibe datos válidos (nunca None)
 
     Incluye indicadores de cambio (up/down/neutral) comparados con el snapshot anterior.
     """
-    rates, updated_at = await rates_service.get_source_rates(db, 'bcc')
+    rates, updated_at = await rates_service.get_source_rates(db, 'bcc', max_age_minutes)
 
     formatted_rates = {}
     for currency, rate_info in rates.items():
