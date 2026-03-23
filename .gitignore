@@ -9,10 +9,15 @@ ENV/
 env/
 .venv
 
-# Environment
+# Environment - CRITICAL: NEVER COMMIT
 .env
-*.env
+.env.*
 !.env.example
+*.env
+.env.local
+.env.development
+.env.production
+.env.test
 
 # Database
 *.db

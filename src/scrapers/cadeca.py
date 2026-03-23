@@ -1,55 +1,15 @@
 """CADECA web scraper for fetching exchange rates from official website."""
 
 import httpx
-from html.parser import HTMLParser
-from typing import Optional, Dict, Any, List
+import urllib3
+from bs4 import BeautifulSoup
+from typing import Optional, Dict, Any
 
+# Desactivar warnings de SSL inseguro (común en sitios .cu)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 CADECA_URL = "https://www.cadeca.cu"
-DEFAULT_TIMEOUT = 8.0
-
-
-class CadecaTableParser(HTMLParser):
-    """HTML parser for CADECA exchange rate table."""
-    
-    def __init__(self):
-        super().__init__()
-        self.result: Dict[str, Dict[str, float]] = {}
-        self.current_row: List[str] = []
-        self.in_row = False
-        self.current_data = ""
-    
-    def handle_starttag(self, tag: str, attrs: List[tuple]):
-        if tag == "tr":
-            self.in_row = True
-            self.current_row = []
-        elif tag == "td":
-            self.current_data = ""
-    
-    def handle_endtag(self, tag: str):
-        if tag == "tr":
-            self.in_row = False
-            if len(self.current_row) >= 3:
-                try:
-                    currency = self.current_row[0].strip()
-                    compra_text = self.current_row[1].strip()
-                    venta_text = self.current_row[2].strip()
-                    
-                    compra = float(compra_text.replace(",", ""))
-                    venta = float(venta_text.replace(",", ""))
-                    
-                    if currency and compra > 0 and venta > 0:
-                        self.result[currency] = {
-                            "compra": compra,
-                            "venta": venta
-                        }
-                except (ValueError, IndexError):
-                    pass
-        elif tag == "td":
-            self.current_row.append(self.current_data.strip())
-    
-    def handle_data(self, data: str):
-        self.current_data += data
+DEFAULT_TIMEOUT = 7.0
 
 
 async def fetch_cadeca(
@@ -62,25 +22,48 @@ async def fetch_cadeca(
     Args:
         url: URL del sitio de CADECA
         timeout: Timeout en segundos
-        
+
     Returns:
         Dict con moneda -> {compra, venta} o None si hay error
     """
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
-    
+
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(verify=False) as client:
             response = await client.get(url, headers=headers, timeout=timeout)
             response.raise_for_status()
+
+            soup = BeautifulSoup(response.content, 'html.parser')
+            contenedor_casas = soup.find('div', id='quicktabs-tabpage-m_dulo_tasa_de_cambio-0')
+
+            if not contenedor_casas:
+                return None
+
+            tabla = contenedor_casas.find('table')
+            if not tabla:
+                return None
+
+            resultados = {}
+            filas = tabla.find('tbody').find_all('tr')
+
+            for fila in filas:
+                columnas = fila.find_all('td')
+                if len(columnas) >= 4:
+                    moneda = columnas[1].get_text(strip=True)
+                    compra_txt = columnas[2].get_text(strip=True)
+                    venta_txt = columnas[3].get_text(strip=True)
+
+                    try:
+                        compra_val = float(compra_txt)
+                        venta_val = float(venta_txt)
+                        resultados[moneda] = {'compra': compra_val, 'venta': venta_val}
+                    except ValueError:
+                        continue
             
-            html = response.text
-            parser = CadecaTableParser()
-            parser.feed(html)
-            
-            return parser.result
-            
+            return resultados if resultados else None
+
     except httpx.HTTPStatusError:
         return None
     except httpx.ReadTimeout:

@@ -45,15 +45,15 @@ async def test_all_scrapers():
         else:
             print("   ❌ Error - No se obtuvieron datos")
     
-    # 2. Binance
-    print("\n2. Probando Binance API...")
+    # 2. Binance US
+    print("\n2. Probando Binance US API...")
     result = await fetch_binance()
     if result:
         print(f"   ✅ Éxito - {len(result)} pares obtenidos")
-        if 'BTCUSDT' in result:
-            print(f"   ₿ BTC: ${result['BTCUSDT']:,.2f}")
-        if 'ETHUSDT' in result:
-            print(f"   Ξ ETH: ${result['ETHUSDT']:,.2f}")
+        if 'BTCUSD' in result:
+            print(f"   ₿ BTC: ${result['BTCUSD']:,.2f}")
+        if 'ETHUSD' in result:
+            print(f"   Ξ ETH: ${result['ETHUSD']:,.2f}")
     else:
         print("   ❌ Error - No se obtuvieron datos")
     

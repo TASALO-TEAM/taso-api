@@ -17,36 +17,37 @@ class Base(DeclarativeBase):
 # Database URL from environment
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./tasalo.db")
 
-# Engine and session factory
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
-)
-
-async_session_factory = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
+# Engine and session factory (global fallback)
+_engine = None
+async_session_factory = None
 
 
 def get_engine(database_url: str, echo: bool = False):
     """Crear engine de SQLAlchemy según el tipo de base de datos."""
+    global _engine, async_session_factory
+    
     if database_url.startswith("sqlite"):
         # SQLite necesita connect_args para async
-        return create_async_engine(
+        _engine = create_async_engine(
             database_url,
             echo=echo,
             connect_args={"check_same_thread": False},
         )
     else:
         # PostgreSQL
-        return create_async_engine(
+        _engine = create_async_engine(
             database_url,
             echo=echo,
             pool_pre_ping=True,  # Verificar conexiones antes de usar
         )
+    
+    async_session_factory = async_sessionmaker(
+        _engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    
+    return _engine
 
 
 def get_session_maker(engine):
@@ -68,6 +69,11 @@ async def get_db():
         async def endpoint(db: AsyncSession = Depends(get_db)):
             ...
     """
+    # Inicializar engine si no existe
+    global async_session_factory
+    if async_session_factory is None:
+        get_engine(DATABASE_URL, echo=False)
+    
     async with async_session_factory() as session:
         try:
             yield session
