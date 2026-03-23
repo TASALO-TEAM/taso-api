@@ -240,9 +240,20 @@ async def _get_previous_snapshot(
     return float(row[0]) if row and row[0] else None
 
 
-async def get_latest_rates(session: AsyncSession) -> dict[str, dict]:
+async def get_latest_rates(session: AsyncSession, max_age_minutes: int = 120) -> dict[str, dict]:
     """
-    Obtiene el snapshot más reciente de cada fuente.
+    Obtiene el snapshot más reciente de cada fuente con estrategia resiliente.
+    
+    ESTRATEGIA DE FALLBACK EN CASCADA:
+    1. Intenta obtener datos del timestamp más reciente de TODAS las fuentes
+    2. Si una fuente no tiene datos en ese timestamp, busca sus últimos datos válidos
+    3. Si no hay datos históricos, retorna dict vacío (pero nunca None)
+    
+    El bot SIEMPRE recibe datos válidos - si son viejos, se marca con data_age_minutes.
+
+    Args:
+        session: SQLAlchemy async session
+        max_age_minutes: Máxima edad de datos en minutos antes de marcar como stale
 
     Returns:
         dict con estructura:
@@ -253,10 +264,16 @@ async def get_latest_rates(session: AsyncSession) -> dict[str, dict]:
             'bcc': {'USD': {'rate': 125.0}}
         }
     """
+    from datetime import timedelta
+    
     result = {}
+    now = datetime.now(timezone.utc)
 
     for source in ['eltoque', 'binance', 'cadeca', 'bcc']:
-        # Subquery para obtener el fetched_at más reciente por fuente
+        snapshots = []
+        age_minutes = None
+        
+        # ESTRATEGIA 1: Intentar obtener datos del timestamp más reciente de ESTA fuente
         subquery = (
             select(func.max(RateSnapshot.fetched_at))
             .where(RateSnapshot.source == source)
@@ -272,67 +289,139 @@ async def get_latest_rates(session: AsyncSession) -> dict[str, dict]:
         query_result = await session.execute(stmt)
         snapshots = query_result.scalars().all()
 
+        # ESTRATEGIA 2: Fallback - si no hay datos en este timestamp, buscar últimos disponibles
         if not snapshots:
-            result[source] = {}
-            continue
+            print(f"⚠️ {source}: Sin datos en timestamp máximo, buscando histórico...")
+            
+            # Buscar últimos 15 snapshots disponibles (cualquier fecha)
+            fallback_stmt = (
+                select(RateSnapshot)
+                .where(RateSnapshot.source == source)
+                .order_by(RateSnapshot.fetched_at.desc())
+                .limit(15)
+            )
+            fallback_result = await session.execute(fallback_stmt)
+            fallback_snapshots = fallback_result.scalars().all()
+            
+            if not fallback_snapshots:
+                print(f"❌ {source}: Sin datos históricos en DB - retornando dict vacío")
+                result[source] = {}
+                continue
+            else:
+                print(f"✅ {source}: Usando fallback con {len(fallback_snapshots)} registros históricos")
+                
+                # ESTRATEGIA 3: Agrupar por currency y tomar el más reciente de cada uno
+                # Esto es importante porque podemos tener múltiples snapshots de diferentes fechas
+                latest_by_currency: dict[str, RateSnapshot] = {}
+                for snap in fallback_snapshots:
+                    if snap.currency not in latest_by_currency:
+                        latest_by_currency[snap.currency] = snap
+                
+                snapshots = list(latest_by_currency.values())
+                print(f"✅ {source}: {len(snapshots)} monedas únicas después de agrupar")
 
-        # Formatear según fuente
-        if source == 'eltoque' or source == 'binance' or source == 'bcc':
+        # Calcular edad de los datos
+        if snapshots:
+            data_age = now - snapshots[0].fetched_at
+            age_minutes = int(data_age.total_seconds() / 60)
+            if age_minutes > max_age_minutes:
+                print(f"⚠️ {source}: Datos con {age_minutes}min de antigüedad (stale > {max_age_minutes}min)")
+            else:
+                print(f"✅ {source}: Datos frescos ({age_minutes}min)")
+
+        # Formatear según fuente - NUNCA retornar None, siempre dict
+        if source in ['eltoque', 'binance', 'bcc']:
             formatted = {}
             for snap in snapshots:
-                rate = snap.sell_rate  # Usar sell_rate como principal
-                if rate:
-                    # Obtener tasa anterior para calcular cambio
-                    prev_rate = await _get_previous_snapshot(
-                        session, source, snap.currency, snap.fetched_at
-                    )
-                    formatted[snap.currency] = {
-                        'rate': float(rate),
-                        'change': calculate_change(float(rate), prev_rate),
-                        'prev_rate': prev_rate,
-                        'fetched_at': snap.fetched_at.isoformat()
-                    }
+                # Validar que sell_rate no sea None
+                if snap.sell_rate is None:
+                    print(f"⚠️ {source}/{snap.currency}: sell_rate es None, saltando")
+                    continue
+                    
+                rate = float(snap.sell_rate)
+                
+                # Obtener tasa anterior para calcular cambio
+                prev_rate = await _get_previous_snapshot(
+                    session, source, snap.currency, snap.fetched_at
+                )
+                
+                formatted[snap.currency] = {
+                    'rate': rate,
+                    'change': calculate_change(rate, prev_rate),
+                    'prev_rate': prev_rate,
+                    'fetched_at': snap.fetched_at.isoformat(),
+                    'data_age_minutes': age_minutes
+                }
+            
             result[source] = formatted
+            if not formatted:
+                print(f"⚠️ {source}: No se pudo formatear ningún dato válido")
 
         elif source == 'cadeca':
             formatted = {}
             for snap in snapshots:
-                if snap.buy_rate or snap.sell_rate:
-                    # Obtener tasa anterior para calcular cambio (usar sell_rate)
-                    prev_rate = None
-                    if snap.sell_rate:
-                        prev_rate = await _get_previous_snapshot(
-                            session, source, snap.currency, snap.fetched_at
-                        )
-                    formatted[snap.currency] = {
-                        'buy': float(snap.buy_rate) if snap.buy_rate else None,
-                        'sell': float(snap.sell_rate) if snap.sell_rate else None,
-                        'change': calculate_change(
-                            float(snap.sell_rate) if snap.sell_rate else 0,
-                            prev_rate
-                        ),
-                        'prev_rate': prev_rate,
-                        'fetched_at': snap.fetched_at.isoformat()
-                    }
+                # CADECA necesita al menos buy_rate o sell_rate
+                if snap.buy_rate is None and snap.sell_rate is None:
+                    print(f"⚠️ {source}/{snap.currency}: buy_rate y sell_rate son None, saltando")
+                    continue
+                
+                # Obtener tasa anterior para calcular cambio (usar sell_rate)
+                prev_rate = None
+                if snap.sell_rate:
+                    prev_rate = await _get_previous_snapshot(
+                        session, source, snap.currency, snap.fetched_at
+                    )
+                
+                formatted[snap.currency] = {
+                    'buy': float(snap.buy_rate) if snap.buy_rate else None,
+                    'sell': float(snap.sell_rate) if snap.sell_rate else None,
+                    'change': calculate_change(
+                        float(snap.sell_rate) if snap.sell_rate else 0,
+                        prev_rate
+                    ),
+                    'prev_rate': prev_rate,
+                    'fetched_at': snap.fetched_at.isoformat(),
+                    'data_age_minutes': age_minutes
+                }
+            
             result[source] = formatted
+            if not formatted:
+                print(f"⚠️ {source}: No se pudo formatear ningún dato válido")
 
+    # Debug final
+    total_rates = sum(len(rates) for rates in result.values())
+    print(f"✅ get_latest_rates: {total_rates} tasas en total de 4 fuentes")
+    
     return result
 
 
 async def get_source_rates(
     session: AsyncSession,
-    source: str
+    source: str,
+    max_age_minutes: int = 120
 ) -> tuple[dict[str, dict], datetime | None]:
     """
-    Obtiene tasas de una fuente específica con cambio calculado.
+    Obtiene tasas de una fuente específica con cambio calculado y estrategia resiliente.
+    
+    ESTRATEGIA DE FALLBACK:
+    1. Intenta obtener datos del timestamp más reciente
+    2. Si no hay, busca últimos datos históricos disponibles
+    3. Retorna dict vacío (nunca None) si no hay datos
 
     Args:
         session: SQLAlchemy async session
         source: 'eltoque' | 'cadeca' | 'bcc' | 'binance'
+        max_age_minutes: Máxima edad de datos antes de marcar como stale
 
     Returns:
         Tupla con (dict de tasas, timestamp actualizado)
+        - dict vacío si no hay datos disponibles
     """
+    from datetime import timedelta
+    
+    now = datetime.now(timezone.utc)
+    
+    # ESTRATEGIA 1: Intentar obtener datos del timestamp más reciente
     subquery = (
         select(func.max(RateSnapshot.fetched_at))
         .where(RateSnapshot.source == source)
@@ -347,41 +436,87 @@ async def get_source_rates(
     query_result = await session.execute(stmt)
     snapshots = query_result.scalars().all()
 
+    # ESTRATEGIA 2: Fallback - buscar histórico si no hay datos recientes
     if not snapshots:
-        return {}, None
+        print(f"⚠️ {source}: Sin datos recientes, buscando histórico...")
+        
+        fallback_stmt = (
+            select(RateSnapshot)
+            .where(RateSnapshot.source == source)
+            .order_by(RateSnapshot.fetched_at.desc())
+            .limit(15)
+        )
+        fallback_result = await session.execute(fallback_stmt)
+        fallback_snapshots = fallback_result.scalars().all()
+        
+        if not fallback_snapshots:
+            print(f"❌ {source}: Sin datos históricos - retornando dict vacío")
+            return {}, None
+        else:
+            print(f"✅ {source}: Usando fallback con {len(fallback_snapshots)} registros")
+            
+            # Agrupar por currency y tomar el más reciente de cada uno
+            latest_by_currency: dict[str, RateSnapshot] = {}
+            for snap in fallback_snapshots:
+                if snap.currency not in latest_by_currency:
+                    latest_by_currency[snap.currency] = snap
+            
+            snapshots = list(latest_by_currency.values())
 
-    formatted = {}
+    # Calcular edad de datos
     updated_at = snapshots[0].fetched_at
+    data_age = now - updated_at
+    age_minutes = int(data_age.total_seconds() / 60)
+    
+    if age_minutes > max_age_minutes:
+        print(f"⚠️ {source}: Datos con {age_minutes}min de antigüedad (stale)")
+    else:
+        print(f"✅ {source}: Datos frescos ({age_minutes}min)")
+
+    # Formatear datos - NUNCA retornar None
+    formatted = {}
 
     for snap in snapshots:
         if source in ['eltoque', 'binance', 'bcc']:
-            rate = snap.sell_rate
-            if rate:
+            # Validar que sell_rate no sea None
+            if snap.sell_rate is None:
+                print(f"⚠️ {source}/{snap.currency}: sell_rate es None, saltando")
+                continue
+                
+            rate = float(snap.sell_rate)
+            prev_rate = await _get_previous_snapshot(
+                session, source, snap.currency, snap.fetched_at
+            )
+            formatted[snap.currency] = {
+                'rate': rate,
+                'change': calculate_change(rate, prev_rate),
+                'prev_rate': prev_rate
+            }
+            
+        elif source == 'cadeca':
+            # CADECA necesita al menos buy_rate o sell_rate
+            if snap.buy_rate is None and snap.sell_rate is None:
+                print(f"⚠️ {source}/{snap.currency}: buy_rate y sell_rate son None, saltando")
+                continue
+                
+            prev_rate = None
+            if snap.sell_rate:
                 prev_rate = await _get_previous_snapshot(
                     session, source, snap.currency, snap.fetched_at
                 )
-                formatted[snap.currency] = {
-                    'rate': float(rate),
-                    'change': calculate_change(float(rate), prev_rate),
-                    'prev_rate': prev_rate
-                }
-        elif source == 'cadeca':
-            if snap.buy_rate or snap.sell_rate:
-                prev_rate = None
-                if snap.sell_rate:
-                    prev_rate = await _get_previous_snapshot(
-                        session, source, snap.currency, snap.fetched_at
-                    )
-                formatted[snap.currency] = {
-                    'buy': float(snap.buy_rate) if snap.buy_rate else None,
-                    'sell': float(snap.sell_rate) if snap.sell_rate else None,
-                    'change': calculate_change(
-                        float(snap.sell_rate) if snap.sell_rate else 0,
-                        prev_rate
-                    ),
-                    'prev_rate': prev_rate
-                }
+            formatted[snap.currency] = {
+                'buy': float(snap.buy_rate) if snap.buy_rate else None,
+                'sell': float(snap.sell_rate) if snap.sell_rate else None,
+                'change': calculate_change(
+                    float(snap.sell_rate) if snap.sell_rate else 0,
+                    prev_rate
+                ),
+                'prev_rate': prev_rate
+            }
 
+    if not formatted:
+        print(f"⚠️ {source}: No se pudo formatear ningún dato válido")
+    
     return formatted, updated_at
 
 
