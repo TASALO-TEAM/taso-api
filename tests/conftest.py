@@ -57,18 +57,28 @@ def binance_sample_data() -> list:
 
 @pytest.fixture
 def cadeca_sample_html() -> str:
-    """HTML de ejemplo de CADECA para tests."""
+    """HTML de ejemplo de CADECA para tests (estructura con tabla y headers)."""
     return """
     <html>
     <body>
         <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th>No.</th>
+                    <th>Moneda</th>
+                    <th>Compra</th>
+                    <th>Venta</th>
+                </tr>
+            </thead>
             <tbody>
                 <tr>
+                    <td>1</td>
                     <td>USD</td>
                     <td class="text-right">120.00</td>
                     <td class="text-right">125.00</td>
                 </tr>
                 <tr>
+                    <td>2</td>
                     <td>EUR</td>
                     <td class="text-right">130.00</td>
                     <td class="text-right">135.00</td>
