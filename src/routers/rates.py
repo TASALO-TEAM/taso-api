@@ -150,9 +150,11 @@ async def get_cadeca_rates(
 
     formatted_rates = {}
     for currency, rate_info in rates.items():
-        # Para CADECA, usar sell_rate como rate principal
+        # Para CADECA, incluir buy y sell explícitamente
         formatted_rates[currency] = CurrencyRate(
-            rate=rate_info.get('sell', 0) or 0,
+            rate=rate_info.get('sell', 0) or 0,  # rate principal es sell
+            buy=rate_info.get('buy'),  # Agregar buy explícitamente
+            sell=rate_info.get('sell'),  # Agregar sell explícitamente
             change=rate_info.get('change', 'neutral'),
             prev_rate=rate_info.get('prev_rate')
         )

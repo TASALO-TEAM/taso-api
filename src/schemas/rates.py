@@ -9,6 +9,8 @@ class CurrencyRate(BaseModel):
     """Tasa individual con indicador de cambio."""
 
     rate: float = Field(..., description="Tasa de cambio actual")
+    buy: float | None = Field(None, description="Tasa de compra (solo CADECA)")
+    sell: float | None = Field(None, description="Tasa de venta (solo CADECA)")
     change: Literal["up", "down", "neutral"] = Field(..., description="Dirección del cambio")
     prev_rate: float | None = Field(None, description="Tasa anterior")
 
