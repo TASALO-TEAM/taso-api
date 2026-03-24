@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 class SchedulerStatusResponse(BaseModel):
     """Estado del scheduler para respuesta de admin/status."""
 
+    is_running: bool = Field(False, description="Si el scheduler está corriendo actualmente")
     last_run_at: datetime | None = Field(None, description="Última vez que se ejecutó el scheduler")
     last_success_at: datetime | None = Field(None, description="Última vez que se ejecutó con éxito")
     error_count: int = Field(0, description="Cantidad de errores consecutivos")

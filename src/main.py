@@ -15,7 +15,8 @@ from src.config import get_settings
 from src.database import get_engine, get_session_maker
 from src.routers import rates as rates_router
 from src.routers import admin as admin_router
-from src.services.scheduler import create_scheduler
+from src.routers import stats as stats_router
+from src.services.scheduler import create_scheduler, init_scheduler_status
 
 settings = get_settings()
 
@@ -46,6 +47,9 @@ async def lifespan(app: FastAPI):
     logger.info(f"⏰ [Startup] Scheduler iniciado (intervalo: {settings.refresh_interval_minutes} min)")
 
     app.state.scheduler = scheduler
+
+    # Inicializar estado del scheduler en DB
+    await init_scheduler_status()
 
     # Iniciar DB
     app.state.engine = get_engine(settings.database_url, echo=False)
@@ -91,6 +95,7 @@ app.add_middleware(
 # Registrar routers
 app.include_router(rates_router.router, prefix="/api/v1/tasas", tags=["Tasas"])
 app.include_router(admin_router.router, prefix="/api/v1/admin", tags=["Admin"])
+app.include_router(stats_router.router, prefix="/api/v1/admin/stats", tags=["Admin Stats"])
 
 
 @app.get("/api/v1/health", tags=["Health"])

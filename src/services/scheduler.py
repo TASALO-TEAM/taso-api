@@ -37,6 +37,34 @@ def create_scheduler() -> AsyncIOScheduler:
     return scheduler
 
 
+async def init_scheduler_status() -> None:
+    """
+    Inicializa el estado del scheduler al arrancar la aplicación.
+    Crea un registro inicial si no existe para indicar que el scheduler está activo.
+    """
+    async with async_session_factory() as session:
+        try:
+            # Verificar si ya existe un registro
+            stmt = select(SchedulerStatus).order_by(SchedulerStatus.id.desc()).limit(1)
+            result = await session.execute(stmt)
+            status = result.scalar_first()
+            
+            if not status:
+                # Crear registro inicial
+                status = SchedulerStatus(
+                    last_run_at=None,
+                    last_success_at=None,
+                    error_count=0,
+                    last_error=None
+                )
+                session.add(status)
+                await session.commit()
+                print("✅ [Scheduler] Estado inicial registrado en DB")
+        except Exception as e:
+            print(f"⚠️ [Scheduler] No se pudo inicializar el estado: {e}")
+            await session.rollback()
+
+
 async def refresh_all() -> None:
     """
     Job que se ejecuta periódicamente:
