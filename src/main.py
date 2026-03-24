@@ -12,7 +12,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from src.config import get_settings
-from src.database import get_engine, get_session_maker
+from src import database
+from src.database import get_engine
 from src.routers import rates as rates_router
 from src.routers import admin as admin_router
 from src.routers import stats as stats_router
@@ -42,8 +43,9 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 [Startup] Iniciando TASALO-API...")
 
     # Iniciar DB primero (necesaria para init_scheduler_status)
+    # get_engine() ya inicializa el global async_session_factory en el módulo database
     app.state.engine = get_engine(settings.database_url, echo=False)
-    app.state.db = get_session_maker(app.state.engine)
+    app.state.db = database.async_session_factory
 
     # Verificar conexión a la base de datos
     try:
@@ -56,10 +58,11 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ [Startup] Error conectando a la base de datos: {e}")
 
     # Inicializar estado del scheduler en DB (requiere DB inicializada)
-    await init_scheduler_status()
+    # Usar database.async_session_factory que fue inicializado por get_engine()
+    await init_scheduler_status(database.async_session_factory)
 
     # Iniciar scheduler
-    scheduler = create_scheduler()
+    scheduler = create_scheduler(database.async_session_factory)
     scheduler.start()
     logger.info(f"⏰ [Startup] Scheduler iniciado (intervalo: {settings.refresh_interval_minutes} min)")
 
