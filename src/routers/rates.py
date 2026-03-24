@@ -59,6 +59,8 @@ async def get_latest_rates(
                 # CADECA tiene buy/sell, usar sell_rate como principal
                 formatted_rates[currency] = CurrencyRate(
                     rate=rate_info.get('sell', 0) or 0,
+                    buy=rate_info.get('buy'),  # Agregar buy explícitamente
+                    sell=rate_info.get('sell'),  # Agregar sell explícitamente
                     change=rate_info.get('change', 'neutral'),
                     prev_rate=rate_info.get('prev_rate')
                 )
