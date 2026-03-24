@@ -41,17 +41,7 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 [Startup] Iniciando TASALO-API...")
 
-    # Iniciar scheduler
-    scheduler = create_scheduler()
-    scheduler.start()
-    logger.info(f"⏰ [Startup] Scheduler iniciado (intervalo: {settings.refresh_interval_minutes} min)")
-
-    app.state.scheduler = scheduler
-
-    # Inicializar estado del scheduler en DB
-    await init_scheduler_status()
-
-    # Iniciar DB
+    # Iniciar DB primero (necesaria para init_scheduler_status)
     app.state.engine = get_engine(settings.database_url, echo=False)
     app.state.db = get_session_maker(app.state.engine)
 
@@ -64,6 +54,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         app.state.db_connected = False
         logger.error(f"❌ [Startup] Error conectando a la base de datos: {e}")
+
+    # Inicializar estado del scheduler en DB (requiere DB inicializada)
+    await init_scheduler_status()
+
+    # Iniciar scheduler
+    scheduler = create_scheduler()
+    scheduler.start()
+    logger.info(f"⏰ [Startup] Scheduler iniciado (intervalo: {settings.refresh_interval_minutes} min)")
+
+    app.state.scheduler = scheduler
 
     yield
 
