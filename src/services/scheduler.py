@@ -19,7 +19,7 @@ def create_scheduler(db_factory: Callable) -> AsyncIOScheduler:
 
     Args:
         db_factory: Factory function que crea sesiones de DB
-    
+
     Jobs:
     - refresh_all: Ejecuta fetch_all_sources() cada N minutos (env)
 
@@ -30,8 +30,10 @@ def create_scheduler(db_factory: Callable) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
 
     # Agregar job de refresh (con db_factory bound)
+    # Usar functools.partial para pasar argumentos correctamente
+    from functools import partial
     scheduler.add_job(
-        lambda: refresh_all(db_factory),
+        partial(refresh_all, db_factory),
         trigger=IntervalTrigger(minutes=settings.refresh_interval_minutes),
         id='refresh_all',
         name='Refresh all rates',
