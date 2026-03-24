@@ -4,11 +4,14 @@ import httpx
 import urllib3
 from bs4 import BeautifulSoup, Tag
 from typing import Optional, Dict, Any
+import logging
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+logger = logging.getLogger(__name__)
+
 CADECA_URL = "https://www.cadeca.cu"
-DEFAULT_TIMEOUT = 7.0
+DEFAULT_TIMEOUT = 15.0  # Aumentado de 7 a 15 segundos para CADECA que es lento
 
 CURRENCY_NAME_MAP = {
     "DOLAR NORTEAMERICANO": "USD",
@@ -36,6 +39,11 @@ def _normalize_currency_name(name: str) -> str:
 def _parse_table(soup: BeautifulSoup) -> Optional[Dict[str, Dict[str, float]]]:
     """Parsea tabla de tasas de CADECA desde un objeto BeautifulSoup.
 
+    Formato nuevo detectado (2026-03-24):
+    - Tabla con 9 filas
+    - Columnas: [vacío, código_moneda, tasa_única]
+    - Sin columnas separadas de compra/venta - usamos misma tasa para ambas
+    
     Estrategia A: Buscar tabla con headers que contengan Compra/Venta.
     Estrategia B: Buscar primera tabla con >= 4 filas en tbody.
     Estrategia C: Primera tabla con >= 4 filas totales.
@@ -80,8 +88,12 @@ def _parse_table(soup: BeautifulSoup) -> Optional[Dict[str, Dict[str, float]]]:
     resultados = {}
     for fila in rows:
         columnas = fila.find_all("td")
+        
+        # Formato nuevo: 3 columnas [vacío, código, tasa]
         if len(columnas) >= 3:
             moneda_raw = columnas[1].get_text(strip=True)
+            
+            # Intentar obtener compra y venta por separado (formato antiguo)
             compra_txt = columnas[2].get_text(strip=True)
             venta_txt = (
                 columnas[3].get_text(strip=True) if len(columnas) > 3 else compra_txt
@@ -93,7 +105,8 @@ def _parse_table(soup: BeautifulSoup) -> Optional[Dict[str, Dict[str, float]]]:
                 compra_val = float(compra_txt.replace(",", "."))
                 venta_val = float(venta_txt.replace(",", "."))
                 resultados[moneda] = {"compra": compra_val, "venta": venta_val}
-            except (ValueError, IndexError):
+            except (ValueError, IndexError) as e:
+                logger.debug(f"  Fila ignorada: {[c.get_text(strip=True) for c in columnas]} - {e}")
                 continue
 
     return resultados if resultados else None
@@ -116,17 +129,21 @@ async def fetch_cadeca(
     }
 
     try:
+        logger.info(f"🕵️ Iniciando scrape de CADECA (timeout: {timeout}s)")
         async with httpx.AsyncClient(verify=False) as client:
             # Estrategia 1: GET simple
+            logger.debug(f"  Estrategia 1: GET simple a {url}")
             response = await client.get(url, headers=headers, timeout=timeout)
             response.raise_for_status()
 
             soup = BeautifulSoup(response.text, "html.parser")
             result = _parse_table(soup)
             if result:
+                logger.info(f"✅ CADECA: {len(result)} monedas encontradas (estrategia 1)")
                 return result
 
             # Estrategia 2: GET con query param para trigger Quicktabs
+            logger.debug(f"  Estrategia 2: GET con query param")
             response2 = await client.get(
                 f"{url}?qt-m_dulo_tasa_de_cambio=0",
                 headers=headers,
@@ -135,15 +152,24 @@ async def fetch_cadeca(
             soup2 = BeautifulSoup(response2.text, "html.parser")
             result2 = _parse_table(soup2)
             if result2:
+                logger.info(f"✅ CADECA: {len(result2)} monedas encontradas (estrategia 2)")
                 return result2
 
+            logger.warning("⚠️ CADECA: No se encontró tabla con formato esperado")
             return None
 
-    except httpx.HTTPStatusError:
+    except httpx.HTTPStatusError as e:
+        logger.error(f"❌ CADECA: HTTP error {e.response.status_code}")
         return None
     except httpx.ReadTimeout:
+        logger.error(f"❌ CADECA: Timeout de lectura ({timeout}s)")
         return None
-    except httpx.RequestError:
+    except httpx.ConnectTimeout:
+        logger.error(f"❌ CADECA: Timeout de conexión - sitio puede estar caído")
         return None
-    except Exception:
+    except httpx.RequestError as e:
+        logger.error(f"❌ CADECA: Error de request: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"❌ CADECA: Error inesperado: {e}", exc_info=True)
         return None
