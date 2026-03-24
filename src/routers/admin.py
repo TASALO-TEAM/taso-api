@@ -1,7 +1,7 @@
 """Router para endpoints admin protegidos."""
 
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -81,6 +81,7 @@ async def refresh_rates(
 
 @router.get("/status", response_model=AdminStatusResponse)
 async def get_scheduler_status(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(require_auth)
 ) -> AdminStatusResponse:
@@ -90,6 +91,10 @@ async def get_scheduler_status(
     Returns:
         AdminStatusResponse: Estado del scheduler con última ejecución y errores
     """
+    # Obtener scheduler del app.state para verificar si está corriendo
+    scheduler = request.app.state.scheduler
+    is_running = scheduler.running if scheduler else False
+    
     # Obtener el registro de estado del scheduler
     stmt = select(SchedulerStatus).order_by(SchedulerStatus.id.desc()).limit(1)
     result = await db.execute(stmt)
@@ -97,6 +102,7 @@ async def get_scheduler_status(
 
     if status:
         scheduler_status = SchedulerStatusResponse(
+            is_running=is_running,
             last_run_at=status.last_run_at,
             last_success_at=status.last_success_at,
             error_count=status.error_count,
@@ -107,6 +113,7 @@ async def get_scheduler_status(
         # No hay registros aún
         now = datetime.now(timezone.utc)
         scheduler_status = SchedulerStatusResponse(
+            is_running=is_running,
             last_run_at=None,
             last_success_at=None,
             error_count=0,
