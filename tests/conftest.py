@@ -47,11 +47,11 @@ def eltoque_sample_data() -> dict:
 
 @pytest.fixture
 def binance_sample_data() -> list:
-    """Datos de ejemplo de Binance para tests."""
+    """Datos de ejemplo de Binance US para tests."""
     return [
         {"symbol": "BTCUSDT", "price": "67500.00"},
         {"symbol": "ETHUSDT", "price": "3450.00"},
-        {"symbol": "USDTUSDT", "price": "1.0001"},
+        # USDTUSDT no disponible en Binance US
     ]
 
 

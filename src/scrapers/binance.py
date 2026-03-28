@@ -5,31 +5,36 @@ import httpx
 from typing import Optional, Dict, Any, List
 
 
-# Binance global API con más pares de criptomonedas
-BINANCE_GLOBAL_URL = "https://api.binance.com/api/v3/ticker/price"
+# Binance US API (funciona desde regiones restringidas)
+# Nota: Binance Global (api.binance.com) está bloqueado en algunas regiones
+# Binance US tiene menos símbolos pero es accesible
+BINANCE_URL = "https://api.binance.us/api/v3/ticker/price"
 
-# Símbolos principales para el ticker (top criptomonedas vs USDT)
-# Incluye USDTUSDT para referencia del valor del USDT
+# Símbolos disponibles en Binance US (verificar periódicamente)
+# USDTUSDT no está disponible en Binance US, se usa solo USD como referencia
 DEFAULT_SYMBOLS = [
     "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT",
     "DOGEUSDT", "SOLUSDT", "TRXUSDT", "DOTUSDT", "MATICUSDT",
     "AVAXUSDT", "LINKUSDT", "UNIUSDT", "ATOMUSDT", "LTCUSDT",
-    "BCHUSDT", "FILUSDT", "ETCUSDT", "XLMUSDT", "ALGOUSDT",
-    "USDTUSDT"  # Para referencia del valor del USDT
+    "BCHUSDT", "FILUSDT", "ETCUSDT", "XLMUSDT", "ALGOUSDT"
+    # USDTUSDT no disponible en Binance US
 ]
 
 
 async def fetch_binance(
     symbols: Optional[List[str]] = None,
-    base_url: str = BINANCE_GLOBAL_URL,
+    base_url: str = BINANCE_URL,
     timeout: float = 10.0
 ) -> Optional[Dict[str, float]]:
     """
-    Obtiene precios de criptomonedas de Binance (API global).
+    Obtiene precios de criptomonedas de Binance US.
+
+    Nota: Binance Global (api.binance.com) está bloqueado en algunas regiones.
+    Usamos Binance US (api.binance.us) que es accesible pero tiene menos símbolos.
 
     Args:
         symbols: Lista de símbolos a consultar (default: top 21 criptomonedas vs USDT)
-        base_url: URL base de la API de Binance (default: api.binance.com)
+        base_url: URL base de la API de Binance (default: api.binance.us)
         timeout: Timeout en segundos
 
     Returns:
