@@ -711,13 +711,14 @@ async def get_cubanomic_cached(
     """
     Get Cubanomic data with Redis cache.
     Cache TTL: 24 hours (86400 seconds).
-    
+
     Returns cached data if available, otherwise fetches fresh data.
-    
+    Only caches successful results with actual data (not empty/error responses).
+
     Args:
         db: AsyncSession database session
         redis_client: Redis client instance
-        
+
     Returns:
         dict with format:
         {
@@ -732,23 +733,33 @@ async def get_cubanomic_cached(
         }
     """
     cache_key = "cubanomic:latest"
-    
+
     # Try cache first
     cached = await redis_client.get(cache_key)
     if cached:
         logger.info("♻️ Cubanomic cache HIT")
         # Parse cached JSON string back to dict
         import json
-        return json.loads(cached)
-    
+        cached_data = json.loads(cached)
+        
+        # Only return cached data if it has actual rates (not empty/error)
+        if cached_data.get("ok") and cached_data.get("data"):
+            return cached_data
+        
+        # Cache is empty or error, delete it and fetch fresh
+        logger.info("⚠️ Cubanomic cache has empty/error data, deleting...")
+        await redis_client.delete(cache_key)
+
     # Fetch fresh data
     logger.info("🔍 Cubanomic cache MISS, fetching...")
     result = await fetch_cubanomic_daily(db)
-    
-    if result.get("ok"):
-        # Cache for 24 hours (86400 seconds)
+
+    if result.get("ok") and result.get("data"):
+        # Only cache successful results with data
         import json
         await redis_client.set(cache_key, json.dumps(result), ttl=86400)
         logger.info("✅ Cubanomic data cached for 24h")
-    
+    else:
+        logger.warning(f"⚠️ Cubanomic fetch returned empty/error result, not caching: {result}")
+
     return result
