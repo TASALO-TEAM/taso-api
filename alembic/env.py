@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 from src.database import Base
-from src.models import RateSnapshot, SchedulerStatus
+from src.models import RateSnapshot, SchedulerStatus, CubanomicRate
 from src.config import get_settings
 
 # this is the Alembic Config object, which provides

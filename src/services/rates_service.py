@@ -11,7 +11,9 @@ from src.scrapers.eltoque import fetch_eltoque
 from src.scrapers.binance import fetch_binance
 from src.scrapers.cadeca import fetch_cadeca
 from src.scrapers.bcc import fetch_bcc
+from src.scrapers.cubanomic import fetch_cubanomic
 from src.models.rate_snapshot import RateSnapshot
+from src.models.rates import CubanomicRate
 
 
 # Legacy: tolerancia de legacy/tasa.py (TOLERANCIA = 0.0001)
@@ -559,3 +561,140 @@ async def get_history(
 
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+async def fetch_cubanomic_daily(db: AsyncSession) -> dict:
+    """
+    Fetch Cubanomic data daily and save to database.
+
+    Steps:
+    1. Call scraper fetch_cubanomic()
+    2. Save latest rates to DB (CubanomicRate)
+    3. Save all historical data points (RateSnapshot)
+    4. Return result dict
+
+    Args:
+        db: AsyncSession database session
+
+    Returns:
+        dict with format:
+        {
+            "ok": True,
+            "rates_saved": 3,  # USD, EUR, MLC
+            "history_saved": 90,  # Total historical points
+            "updated_at": "2026-03-28T00:00:00Z"
+        }
+        Or error:
+        {
+            "ok": False,
+            "error": "Error message"
+        }
+    """
+    try:
+        # Fetch data from Cubanomic API
+        result = await fetch_cubanomic(days=30)
+
+        if not result.get("ok"):
+            error_msg = result.get("error", {}).get("message", "Unknown error")
+            print(f"❌ 🇨🇺 Cubanomic fetch failed: {error_msg}")
+            return {"ok": False, "error": error_msg}
+
+        data = result.get("data", {})
+        history = result.get("history", [])
+        updated_at = result.get("updated_at")
+
+        # Parse rates
+        usd_rate = data.get("USD", {}).get("rate")
+        eur_rate = data.get("EUR", {}).get("rate")
+        mlc_rate = data.get("MLC", {}).get("rate")
+
+        if not all([usd_rate, eur_rate, mlc_rate]):
+            print(f"❌ 🇨🇺 Cubanomic: Missing required rates")
+            return {"ok": False, "error": "Missing required rates"}
+
+        # Parse updated_at timestamp
+        try:
+            fetched_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            fetched_at = datetime.now(timezone.utc)
+
+        # Save snapshot
+        await save_cubanomic_snapshot(db, usd_rate, eur_rate, mlc_rate, fetched_at)
+        print(f"✅ 🇨🇺 Cubanomic snapshot saved: USD={usd_rate}, EUR={eur_rate}, MLC={mlc_rate}")
+
+        # Save historical data points
+        history_count = 0
+        if history:
+            now = datetime.now(timezone.utc)
+            snapshots = []
+
+            for point in history:
+                currency = point.get("currency")
+                rate = point.get("rate")
+                date_str = point.get("date")
+
+                if not all([currency, rate, date_str]):
+                    continue
+
+                # Parse date string to datetime
+                try:
+                    point_date = datetime.fromisoformat(date_str)
+                    if point_date.tzinfo is None:
+                        point_date = point_date.replace(tzinfo=timezone.utc)
+                except (ValueError, AttributeError):
+                    point_date = now
+
+                snapshot = RateSnapshot(
+                    source="cubanomic",
+                    currency=currency,
+                    buy_rate=None,
+                    sell_rate=float(rate),
+                    fetched_at=point_date,
+                )
+                snapshots.append(snapshot)
+
+            if snapshots:
+                db.add_all(snapshots)
+                history_count = len(snapshots)
+                print(f"✅ 🇨🇺 Cubanomic history saved: {history_count} points")
+
+        await db.commit()
+
+        return {
+            "ok": True,
+            "rates_saved": 3,
+            "history_saved": history_count,
+            "updated_at": updated_at,
+        }
+
+    except Exception as e:
+        print(f"❌ 🇨🇺 Cubanomic fetch error: {e}")
+        await db.rollback()
+        return {"ok": False, "error": str(e)}
+
+
+async def save_cubanomic_snapshot(
+    db: AsyncSession,
+    usd_rate: float,
+    eur_rate: float,
+    mlc_rate: float,
+    fetched_at: datetime
+) -> None:
+    """
+    Create and save CubanomicRate record.
+
+    Args:
+        db: AsyncSession database session
+        usd_rate: USD exchange rate
+        eur_rate: EUR exchange rate
+        mlc_rate: MLC exchange rate
+        fetched_at: Timestamp of the data
+    """
+    snapshot = CubanomicRate(
+        usd_rate=float(usd_rate),
+        eur_rate=float(eur_rate),
+        mlc_rate=float(mlc_rate),
+        fetched_at=fetched_at,
+    )
+    db.add(snapshot)
+    print(f"✅ 🇨🇺 CubanomicRate created: {snapshot}")

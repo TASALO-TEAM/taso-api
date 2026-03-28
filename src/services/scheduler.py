@@ -1,16 +1,20 @@
 """APScheduler configuration and jobs."""
 
+import logging
 from datetime import datetime, timezone
 from typing import Callable, Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import get_settings
 from src.models.scheduler_status import SchedulerStatus
-from src.services.rates_service import fetch_all_sources, save_snapshot
+from src.services import rates_service
+
+logger = logging.getLogger(__name__)
 
 
 def create_scheduler(db_factory: Callable) -> AsyncIOScheduler:
@@ -22,6 +26,7 @@ def create_scheduler(db_factory: Callable) -> AsyncIOScheduler:
 
     Jobs:
     - refresh_all: Ejecuta fetch_all_sources() cada N minutos (env)
+    - cubanomic_daily: Ejecuta fetch_cubanomic_daily() a las 00:01 UTC
 
     Returns:
         AsyncIOScheduler configurado
@@ -40,6 +45,9 @@ def create_scheduler(db_factory: Callable) -> AsyncIOScheduler:
         replace_existing=True
     )
 
+    # Agregar job de Cubanomic (se inicializa aparte)
+    # init_cubanomic_scheduler() se llama después de crear el scheduler
+
     return scheduler
 
 
@@ -47,7 +55,7 @@ async def init_scheduler_status(db_factory: Callable) -> None:
     """
     Inicializa el estado del scheduler al arrancar la aplicación.
     Crea un registro inicial si no existe para indicar que el scheduler está activo.
-    
+
     Args:
         db_factory: Factory function que crea sesiones de DB
     """
@@ -57,7 +65,7 @@ async def init_scheduler_status(db_factory: Callable) -> None:
             stmt = select(SchedulerStatus).order_by(SchedulerStatus.id.desc()).limit(1)
             result = await session.execute(stmt)
             status = result.scalars().first()
-            
+
             if not status:
                 # Crear registro inicial
                 status = SchedulerStatus(
@@ -72,6 +80,48 @@ async def init_scheduler_status(db_factory: Callable) -> None:
         except Exception as e:
             print(f"⚠️ [Scheduler] No se pudo inicializar el estado: {e}")
             await session.rollback()
+
+
+async def init_cubanomic_scheduler(
+    scheduler: AsyncIOScheduler,
+    db_factory: Callable[[], AsyncSession]
+) -> None:
+    """
+    Initialize Cubanomic daily fetch job.
+
+    Args:
+        scheduler: AsyncIOScheduler instance
+        db_factory: Factory function that creates DB sessions
+
+    Job:
+    - fetch_cubanomic_job: Runs daily at 00:01 UTC
+    """
+
+    async def fetch_cubanomic_job() -> None:
+        """Fetch Cubanomic data daily at 00:01 UTC."""
+        db = db_factory()
+        try:
+            async with db:
+                result = await rates_service.fetch_cubanomic_daily(db)
+                if result.get("ok"):
+                    logger.info(f"🇨🇺 Cubanomic fetch: {result}")
+                else:
+                    logger.error(f"❌ Cubanomic fetch failed: {result.get('error')}")
+        except Exception as e:
+            logger.error(f"❌ Cubanomic fetch failed: {e}")
+
+    # Run daily at 00:01 UTC
+    scheduler.add_job(
+        fetch_cubanomic_job,
+        trigger="cron",
+        hour=0,
+        minute=1,
+        timezone="UTC",
+        id="cubanomic_daily",
+        name="Fetch Cubanomic rates daily",
+        replace_existing=True,
+    )
+    print("✅ [Scheduler] Cubanomic daily job added (00:01 UTC)")
 
 
 async def refresh_all(db_factory: Callable) -> None:
