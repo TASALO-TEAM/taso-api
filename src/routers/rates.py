@@ -20,6 +20,8 @@ from src.schemas.rates import (
     CubanomicHistoryResponse,
     CubanomicHistorySnapshot,
 )
+from src.schemas.history import LocalHistoryResponse, LocalHistorySnapshot
+from src.models.rates import HistorySnapshot as HistorySnapshotModel
 
 
 logger = logging.getLogger(__name__)
@@ -368,10 +370,10 @@ async def get_cubanomic_history(
 def _group_cubanomic_history_by_date(history: list) -> list[CubanomicHistorySnapshot]:
     """
     Agrupa histórico de Cubanomic por fecha, combinando USD/EUR/MLC rates.
-    
+
     Args:
         history: Lista de puntos {"date": "...", "currency": "USD", "rate": 517.26}
-    
+
     Returns:
         Lista agrupada por fecha con todos los rates:
         [
@@ -386,25 +388,25 @@ def _group_cubanomic_history_by_date(history: list) -> list[CubanomicHistorySnap
         ]
     """
     from collections import defaultdict
-    
+
     # Group by date
     by_date: dict[str, dict[str, float]] = defaultdict(dict)
-    
+
     for point in history:
         date = point.get("date")
         currency = point.get("currency")
         rate = point.get("rate")
-        
+
         if date and currency and rate is not None:
             by_date[date][currency] = rate
-    
+
     # Build grouped snapshots
     grouped = []
     for date, rates in sorted(by_date.items()):
         usd_rate = rates.get("USD")
         eur_rate = rates.get("EUR")
         mlc_rate = rates.get("MLC")
-        
+
         snapshot = CubanomicHistorySnapshot(
             source="cubanomic",
             currency="MULTI",
@@ -416,5 +418,117 @@ def _group_cubanomic_history_by_date(history: list) -> list[CubanomicHistorySnap
             mlc_rate=mlc_rate
         )
         grouped.append(snapshot)
-    
+
     return grouped
+
+
+@router.get("/history/local", response_model=LocalHistoryResponse)
+async def get_local_history(
+    days: int = Query(
+        default=1,
+        ge=1,
+        le=730,
+        description="Número de días de histórico (1-730). Default: 1."
+    ),
+    db: AsyncSession = Depends(get_db)
+) -> LocalHistoryResponse:
+    """
+    Obtiene histórico local de tasas (USD/EUR/MLC) desde la base de datos.
+
+    Los datos se recolectan automáticamente cada 5 minutos del refresh cycle.
+
+    Args:
+        days: Número de días de histórico (1-730). Default: 1.
+
+    Returns:
+        Lista de snapshots con tasas USD/EUR/MLC agrupadas por fecha.
+    """
+    from sqlalchemy import select
+    from datetime import timedelta
+
+    # Calculate date range
+    end_date = datetime.now(timezone.utc)
+    start_date = end_date - timedelta(days=days)
+
+    # Query history snapshots
+    result = await db.execute(
+        select(HistorySnapshotModel)
+        .where(HistorySnapshotModel.fetched_at >= start_date)
+        .where(HistorySnapshotModel.fetched_at <= end_date)
+        .order_by(HistorySnapshotModel.fetched_at.asc())
+    )
+
+    snapshots = result.scalars().all()
+
+    # Convert to response format (group by date, average per day)
+    grouped_data = _group_local_history_by_date(snapshots)
+
+    return LocalHistoryResponse(
+        ok=True,
+        data=grouped_data,
+        count=len(grouped_data)
+    )
+
+
+def _group_local_history_by_date(snapshots: list) -> list[LocalHistorySnapshot]:
+    """
+    Agrupa snapshots locales por fecha, promediando USD/EUR/MLC rates del día.
+
+    Args:
+        snapshots: List of HistorySnapshot from database query
+
+    Returns:
+        List of LocalHistorySnapshot grouped by date
+    """
+    from collections import defaultdict
+
+    # Group by date
+    by_date: dict = defaultdict(lambda: {
+        'usd': [], 'eur': [], 'mlc': []
+    })
+
+    for snapshot in snapshots:
+        snapshot_date = snapshot.fetched_at.date()
+
+        # Collect all available rates for this date
+        if snapshot.eltoque_usd is not None:
+            by_date[snapshot_date]['usd'].append(snapshot.eltoque_usd)
+        if snapshot.cadeca_usd is not None:
+            by_date[snapshot_date]['usd'].append(snapshot.cadeca_usd)
+        if snapshot.bcc_usd is not None:
+            by_date[snapshot_date]['usd'].append(snapshot.bcc_usd)
+
+        if snapshot.eltoque_eur is not None:
+            by_date[snapshot_date]['eur'].append(snapshot.eltoque_eur)
+        if snapshot.cadeca_eur is not None:
+            by_date[snapshot_date]['eur'].append(snapshot.cadeca_eur)
+        if snapshot.bcc_eur is not None:
+            by_date[snapshot_date]['eur'].append(snapshot.bcc_eur)
+
+        if snapshot.eltoque_mlc is not None:
+            by_date[snapshot_date]['mlc'].append(snapshot.eltoque_mlc)
+        if snapshot.cadeca_mlc is not None:
+            by_date[snapshot_date]['mlc'].append(snapshot.cadeca_mlc)
+        if snapshot.bcc_mlc is not None:
+            by_date[snapshot_date]['mlc'].append(snapshot.bcc_mlc)
+
+    # Calculate daily averages
+    result = []
+    for snapshot_date in sorted(by_date.keys()):
+        data = by_date[snapshot_date]
+
+        usd_avg = sum(data['usd']) / len(data['usd']) if data['usd'] else None
+        eur_avg = sum(data['eur']) / len(data['eur']) if data['eur'] else None
+        mlc_avg = sum(data['mlc']) / len(data['mlc']) if data['mlc'] else None
+
+        # Use midnight UTC for the date
+        fetched_at = datetime.combine(snapshot_date, datetime.min.time(), tzinfo=timezone.utc)
+
+        result.append(LocalHistorySnapshot(
+            fetched_at=fetched_at,
+            usd_rate=usd_avg,
+            eur_rate=eur_avg,
+            mlc_rate=mlc_avg
+        ))
+
+    return result
