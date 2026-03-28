@@ -55,10 +55,5 @@ class HistorySnapshot(Base):
     binance_btc = Column(Float)
     binance_eth = Column(Float)
 
-    # Index for faster queries by date
-    __table_args__ = (
-        Index("ix_history_snapshots_fetched_at", "fetched_at"),
-    )
-
     def __repr__(self) -> str:
         return f"<HistorySnapshot(fetched_at={self.fetched_at}, eltoque_usd={self.eltoque_usd}, cadeca_usd={self.cadeca_usd}, bcc_usd={self.bcc_usd})>"

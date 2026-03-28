@@ -6,6 +6,15 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
 from src.database import Base
+from src.main import app
+
+
+@pytest.fixture
+def client():
+    """Crear cliente de test para endpoints."""
+    from starlette.testclient import TestClient
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 @pytest.fixture

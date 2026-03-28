@@ -23,7 +23,7 @@ def upgrade() -> None:
     op.create_table(
         'history_snapshots',
         sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('fetched_at', sa.DateTime(timezone=True), nullable=False),
+        sa.Column('fetched_at', sa.DateTime(timezone=True), nullable=False, index=True),
         sa.Column('eltoque_usd', sa.Float(), nullable=True),
         sa.Column('eltoque_eur', sa.Float(), nullable=True),
         sa.Column('eltoque_mlc', sa.Float(), nullable=True),
@@ -37,10 +37,8 @@ def upgrade() -> None:
         sa.Column('binance_eth', sa.Float(), nullable=True),
         sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('ix_history_snapshots_fetched_at', 'history_snapshots', ['fetched_at'])
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_index('ix_history_snapshots_fetched_at', table_name='history_snapshots')
     op.drop_table('history_snapshots')
