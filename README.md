@@ -117,6 +117,7 @@ curl http://localhost:8040/api/v1/health
 | `GET` | `/api/v1/tasas/cubanomic` | ❌ | Tasas de Cubanomic (USD/EUR/MLC) **NUEVO** |
 | `GET` | `/api/v1/tasas/history` | ❌ | Histórico (source, currency, days) |
 | `GET` | `/api/v1/tasas/history/cubanomic` | ❌ | Histórico Cubanomic (7d-2y) **NUEVO** |
+| `GET` | `/api/v1/tasas/history/local` | ❌ | Histórico local (1d-2y) **NUEVO** |
 | `GET` | `/api/v1/admin/status` | ✅ | Scheduler status |
 | `POST` | `/api/v1/admin/refresh` | ✅ | Trigger manual refresh |
 
@@ -335,6 +336,41 @@ redis-cli ping  # Should return: PONG
 |----------|-----|-------------|
 | `/api/v1/tasas/cubanomic` | 24h | Tasas actuales |
 | `/api/v1/tasas/history/cubanomic?days=X` | 1h | Histórico por rango de días |
+| `/api/v1/tasas/history/local?days=X` | — | Histórico local (sin cache) |
+
+---
+
+## 📊 Local History System
+
+The local history endpoint provides historical rate data collected automatically from the 5-minute refresh cycles.
+
+**Endpoint:** `GET /api/v1/tasas/history/local`
+
+**Query Parameters:**
+- `days` (optional): Number of days of history (1-730). Default: 1.
+
+**Response Format:**
+```json
+{
+  "ok": true,
+  "data": [
+    {
+      "fetched_at": "2026-03-29T00:00:00Z",
+      "usd_rate": 517.26,
+      "eur_rate": 582.36,
+      "mlc_rate": 394.82
+    }
+  ],
+  "count": 1,
+  "source": "local"
+}
+```
+
+**Notes:**
+- Data is automatically collected every 5 minutes from the existing refresh job
+- Rates are daily averages from all available sources (ElToque, CADECA, BCC)
+- Starts with 1 day of data, expands as data accumulates
+- No caching - always returns fresh data from database
 
 ---
 
