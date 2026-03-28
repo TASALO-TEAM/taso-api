@@ -266,3 +266,31 @@ def test_get_cubanomic_rates_invalid_max_age(client):
     # Above maximum (2880)
     response = client.get("/api/v1/tasas/cubanomic?max_age_minutes=3000")
     assert response.status_code == 422
+
+
+def test_get_cubanomic_history_default(client):
+    """GET /api/v1/tasas/history/cubanomic returns historical data."""
+    response = client.get("/api/v1/tasas/history/cubanomic")
+    # Should return 200 even if Redis/API is unavailable (returns empty data)
+    assert response.status_code == 200
+    data = response.json()
+    assert "ok" in data
+    assert "data" in data
+    assert "count" in data
+
+
+def test_get_cubanomic_history_with_days(client):
+    """GET /api/v1/tasas/history/cubanomic accepts days parameter."""
+    response = client.get("/api/v1/tasas/history/cubanomic?days=60")
+    assert response.status_code == 200
+
+
+def test_get_cubanomic_history_invalid_days(client):
+    """GET /api/v1/tasas/history/cubanomic rejects invalid days."""
+    # Too low (min is 7)
+    response = client.get("/api/v1/tasas/history/cubanomic?days=5")
+    assert response.status_code == 422
+
+    # Too high (max is 730)
+    response = client.get("/api/v1/tasas/history/cubanomic?days=800")
+    assert response.status_code == 422

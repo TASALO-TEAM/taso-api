@@ -1,5 +1,6 @@
 """Router para endpoints públicos de tasas."""
 
+import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Query
 
@@ -17,6 +18,9 @@ from src.schemas.rates import (
     HistorySnapshot,
     HistoryQueryParams,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter()
@@ -263,25 +267,25 @@ async def get_cubanomic_rates(
 ) -> SourceRatesResponse:
     """
     Obtiene las tasas de Cubanomic (USD/EUR/MLC).
-    
+
     Datos cacheados en Redis con TTL de 24 horas.
-    
+
     - **max_age_minutes**: Máxima edad de datos en minutos (default: 1440 = 24h)
     """
     from src.services.rates_service import get_cubanomic_cached
-    
+
     result = await get_cubanomic_cached(db, redis)
-    
+
     if not result.get("ok"):
         return SourceRatesResponse(
             source="cubanomic",
             rates={},
             updated_at=datetime.now(timezone.utc)
         )
-    
+
     # Format rates from result
     latest_data = result.get("data", {})
-    
+
     # Convert to CurrencyRate format
     formatted_rates = {}
     for currency, rate_info in latest_data.items():
@@ -292,9 +296,75 @@ async def get_cubanomic_rates(
                 change="neutral",  # Cubanomic doesn't track change yet
                 prev_rate=None
             )
-    
+
     return SourceRatesResponse(
         source="cubanomic",
         rates=formatted_rates,
         updated_at=datetime.now(timezone.utc)
+    )
+
+
+@router.get("/history/cubanomic", response_model=HistoryResponse)
+async def get_cubanomic_history(
+    days: int = Query(
+        default=30,
+        ge=7,
+        le=730,  # 2 years
+        description="Días de histórico (7-730)"
+    ),
+    db: AsyncSession = Depends(get_db),
+    redis: RedisClient = Depends(get_redis)
+) -> HistoryResponse:
+    """
+    Obtiene histórico de Cubanomic (USD/EUR/MLC).
+
+    Rangos disponibles: 7d, 14d, 30d, 60d, 90d, 6m (180d), 1y (365d), 2y (730d)
+    Datos cacheados en Redis por fuente y rango de días.
+    """
+    cache_key = f"cubanomic:history:{days}"
+
+    # Try cache first
+    cached = await redis.get(cache_key)
+    if cached:
+        logger.info(f"♻️ Cubanomic history cache HIT for {days} days")
+        return HistoryResponse(
+            ok=True,
+            data=[
+                HistorySnapshot(
+                    source="cubanomic",
+                    currency="MULTI",
+                    buy_rate=None,
+                    sell_rate=None,
+                    fetched_at=point["date"]
+                )
+                for point in cached
+            ],
+            count=len(cached)
+        )
+
+    # Fetch from Cubanomic API
+    from src.scrapers.cubanomic import fetch_cubanomic
+    result = await fetch_cubanomic(days=days)
+
+    if not result.get("ok"):
+        return HistoryResponse(ok=False, data=[], count=0)
+
+    history = result.get("history", [])
+
+    # Cache for 1 hour (historical data changes less frequently)
+    await redis.set(cache_key, history, ttl=3600)
+
+    return HistoryResponse(
+        ok=True,
+        data=[
+            HistorySnapshot(
+                source="cubanomic",
+                currency="MULTI",
+                buy_rate=None,
+                sell_rate=None,
+                fetched_at=point["date"]
+            )
+            for point in history
+        ],
+        count=len(history)
     )
