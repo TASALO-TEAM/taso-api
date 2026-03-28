@@ -741,11 +741,11 @@ async def get_cubanomic_cached(
         # Parse cached JSON string back to dict
         import json
         cached_data = json.loads(cached)
-        
+
         # Only return cached data if it has actual rates (not empty/error)
         if cached_data.get("ok") and cached_data.get("data"):
             return cached_data
-        
+
         # Cache is empty or error, delete it and fetch fresh
         logger.info("⚠️ Cubanomic cache has empty/error data, deleting...")
         await redis_client.delete(cache_key)
@@ -763,3 +763,50 @@ async def get_cubanomic_cached(
         logger.warning(f"⚠️ Cubanomic fetch returned empty/error result, not caching: {result}")
 
     return result
+
+
+async def save_history_snapshot(db: AsyncSession, rates_data: dict) -> None:
+    """
+    Save a snapshot of all rates to the history_snapshots table.
+    Called automatically by the scheduler every 5 minutes.
+
+    Args:
+        db: AsyncSession database session
+        rates_data: dict with format from fetch_all_sources()
+    """
+    from src.models.rates import HistorySnapshot
+    from datetime import datetime
+
+    snapshot = HistorySnapshot(
+        fetched_at=datetime.now(timezone.utc),
+        # ElToque
+        eltoque_usd=rates_data.get('eltoque', {}).get('USD', {}).get('rate'),
+        eltoque_eur=rates_data.get('eltoque', {}).get('EUR', {}).get('rate'),
+        eltoque_mlc=rates_data.get('eltoque', {}).get('MLC', {}).get('rate'),
+        # CADECA (average of buy/sell)
+        cadeca_usd=_average_cadeca_rate(rates_data.get('cadeca', {}).get('USD', {})),
+        cadeca_eur=_average_cadeca_rate(rates_data.get('cadeca', {}).get('EUR', {})),
+        cadeca_mlc=_average_cadeca_rate(rates_data.get('cadeca', {}).get('MLC', {})),
+        # BCC (average of buy/sell)
+        bcc_usd=_average_cadeca_rate(rates_data.get('bcc', {}).get('USD', {})),
+        bcc_eur=_average_cadeca_rate(rates_data.get('bcc', {}).get('EUR', {})),
+        bcc_mlc=_average_cadeca_rate(rates_data.get('bcc', {}).get('MLC', {})),
+        # Binance
+        binance_btc=rates_data.get('binance', {}).get('BTC', {}).get('rate'),
+        binance_eth=rates_data.get('binance', {}).get('ETH', {}).get('rate'),
+    )
+
+    db.add(snapshot)
+    await db.commit()
+    logger.info(f"📊 History snapshot saved: {snapshot.fetched_at}")
+
+
+def _average_cadeca_rate(rate_data: dict) -> float | None:
+    """Calculate average of buy/sell rates for CADECA/BCC."""
+    if not rate_data:
+        return None
+    buy = rate_data.get('buy')
+    sell = rate_data.get('sell')
+    if buy and sell:
+        return (buy + sell) / 2
+    return buy or sell

@@ -129,10 +129,11 @@ async def refresh_all(db_factory: Callable) -> None:
     Job que se ejecuta periódicamente:
     1. Ejecuta los 4 scrapers en paralelo
     2. Persiste snapshots en PostgreSQL
-    3. Actualiza scheduler_status
+    3. Guarda history snapshot para local history endpoint
+    4. Actualiza scheduler_status
 
     Legacy pattern: bucle principal de legacy/tasa.py
-    
+
     Args:
         db_factory: Factory function que crea sesiones de DB
     """
@@ -147,6 +148,10 @@ async def refresh_all(db_factory: Callable) -> None:
             for source, data in results.items():
                 if data:
                     await save_snapshot(session, source, data)
+
+            # NEW: Save to history snapshots
+            from src.services.rates_service import save_history_snapshot
+            await save_history_snapshot(session, results)
 
             # 3. Actualizar scheduler_status con éxito
             await _update_scheduler_status(
@@ -173,7 +178,7 @@ async def refresh_all(db_factory: Callable) -> None:
                     error=str(e)
                 )
                 await error_session.commit()
-            
+
             raise
 
 
