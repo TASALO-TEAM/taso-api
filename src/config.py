@@ -3,6 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
 
 class Settings(BaseSettings):
@@ -30,7 +31,17 @@ class Settings(BaseSettings):
     
     # CORS
     allowed_origins: str = "*"
-    
+
+    # Redis
+    redis_url: str = Field(
+        default="redis://localhost:6379/0",
+        description="Redis connection URL for caching"
+    )
+    redis_ttl_cubanomic: int = Field(
+        default=86400,  # 24 hours in seconds
+        description="TTL for Cubanomic cache in seconds"
+    )
+
     def model_post_init(self, __context) -> None:
         """Validar configuración después de inicializar."""
         if self.refresh_interval_minutes < 1:

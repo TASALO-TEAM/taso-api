@@ -63,9 +63,32 @@ def test_allowed_origins_list_multiple():
         database_url="sqlite+aiosqlite:///./test.db",
         allowed_origins="https://example.com, https://test.com ,https://api.com"
     )
-    
+
     assert settings.allowed_origins_list == [
         "https://example.com",
         "https://test.com",
         "https://api.com"
     ]
+
+
+def test_redis_settings_default_values():
+    """Redis settings usa valores por defecto correctos."""
+    settings = Settings(
+        database_url="sqlite+aiosqlite:///./test.db",
+        admin_api_key="test_default"
+    )
+
+    assert settings.redis_url == "redis://localhost:6379/0"
+    assert settings.redis_ttl_cubanomic == 86400  # 24 hours
+
+
+def test_redis_settings_from_env_vars(monkeypatch):
+    """Redis settings carga correctamente desde variables de entorno."""
+    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
+    monkeypatch.setenv("REDIS_URL", "redis://redis-server:6380/1")
+    monkeypatch.setenv("REDIS_TTL_CUBANOMIC", "3600")
+
+    settings = Settings()
+
+    assert settings.redis_url == "redis://redis-server:6380/1"
+    assert settings.redis_ttl_cubanomic == 3600  # 1 hour
