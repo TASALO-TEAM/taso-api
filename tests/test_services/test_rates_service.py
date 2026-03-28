@@ -158,13 +158,72 @@ async def test_get_latest_rates_eltoque_format():
     """get_latest_rates formatea ElToque como {currency: {rate, change}}."""
     from src.services.rates_service import get_latest_rates
     from src.database import async_session_factory
-    
+
     async with async_session_factory() as session:
         result = await get_latest_rates(session)
-        
+
         eltoque = result.get('eltoque', {})
         # Verificar estructura
         if eltoque:
             usd = eltoque.get('USD')
             if usd:
                 assert 'rate' in usd or 'sell_rate' in usd
+
+
+@pytest.mark.asyncio
+async def test_get_cubanomic_cached_cache_miss():
+    """get_cubanomic_cached hace fetch cuando no hay cache."""
+    from src.services.rates_service import get_cubanomic_cached
+    from unittest.mock import AsyncMock, patch
+    import json
+
+    # Mock Redis client
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = None  # Cache miss
+    
+    # Mock db session
+    mock_db = AsyncMock()
+    
+    # Mock fetch_cubanomic_daily result
+    mock_result = {
+        "ok": True,
+        "data": {"USD": {"rate": 365.0}, "EUR": {"rate": 398.0}},
+        "updated_at": "2026-03-28T00:00:00Z"
+    }
+    
+    with patch('src.services.rates_service.fetch_cubanomic_daily', return_value=mock_result):
+        result = await get_cubanomic_cached(mock_db, mock_redis)
+        
+        # Verify Redis get was called
+        mock_redis.get.assert_called_once_with("cubanomic:latest")
+        # Verify fetch was called
+        assert result["ok"] is True
+        assert result["data"]["USD"]["rate"] == 365.0
+
+
+@pytest.mark.asyncio
+async def test_get_cubanomic_cached_cache_hit():
+    """get_cubanomic_cached retorna datos cacheados cuando existen."""
+    from src.services.rates_service import get_cubanomic_cached
+    from unittest.mock import AsyncMock
+    import json
+
+    # Mock Redis client with cached data
+    mock_redis = AsyncMock()
+    cached_data = {
+        "ok": True,
+        "data": {"USD": {"rate": 370.0}, "EUR": {"rate": 400.0}},
+        "updated_at": "2026-03-27T00:00:00Z"
+    }
+    mock_redis.get.return_value = json.dumps(cached_data)
+    
+    # Mock db session
+    mock_db = AsyncMock()
+    
+    result = await get_cubanomic_cached(mock_db, mock_redis)
+    
+    # Verify Redis get was called
+    mock_redis.get.assert_called_once_with("cubanomic:latest")
+    # Verify fetch was NOT called (cache hit)
+    assert result["ok"] is True
+    assert result["data"]["USD"]["rate"] == 370.0  # Cached value

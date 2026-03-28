@@ -1,6 +1,8 @@
 """Rates business logic service."""
 
 import asyncio
+import json
+import logging
 from typing import Any, Literal
 from datetime import datetime, timezone
 
@@ -14,6 +16,8 @@ from src.scrapers.bcc import fetch_bcc
 from src.scrapers.cubanomic import fetch_cubanomic
 from src.models.rate_snapshot import RateSnapshot
 from src.models.rates import CubanomicRate
+
+logger = logging.getLogger(__name__)
 
 
 # Legacy: tolerancia de legacy/tasa.py (TOLERANCIA = 0.0001)
@@ -698,3 +702,53 @@ async def save_cubanomic_snapshot(
     )
     db.add(snapshot)
     print(f"✅ 🇨🇺 CubanomicRate created: {snapshot}")
+
+
+async def get_cubanomic_cached(
+    db: AsyncSession,
+    redis_client: "RedisClient"
+) -> dict:
+    """
+    Get Cubanomic data with Redis cache.
+    Cache TTL: 24 hours (86400 seconds).
+    
+    Returns cached data if available, otherwise fetches fresh data.
+    
+    Args:
+        db: AsyncSession database session
+        redis_client: Redis client instance
+        
+    Returns:
+        dict with format:
+        {
+            "ok": True,
+            "data": {...},
+            "updated_at": "2026-03-28T00:00:00Z"
+        }
+        Or error:
+        {
+            "ok": False,
+            "error": "Error message"
+        }
+    """
+    cache_key = "cubanomic:latest"
+    
+    # Try cache first
+    cached = await redis_client.get(cache_key)
+    if cached:
+        logger.info("♻️ Cubanomic cache HIT")
+        # Parse cached JSON string back to dict
+        import json
+        return json.loads(cached)
+    
+    # Fetch fresh data
+    logger.info("🔍 Cubanomic cache MISS, fetching...")
+    result = await fetch_cubanomic_daily(db)
+    
+    if result.get("ok"):
+        # Cache for 24 hours (86400 seconds)
+        import json
+        await redis_client.set(cache_key, json.dumps(result), ttl=86400)
+        logger.info("✅ Cubanomic data cached for 24h")
+    
+    return result

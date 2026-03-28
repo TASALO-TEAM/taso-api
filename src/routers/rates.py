@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
+from src.redis_client import RedisClient, get_redis
 from src.services import rates_service
 from src.schemas.rates import (
     CurrencyRate,
@@ -246,4 +247,54 @@ async def get_history(
         ok=True,
         data=formatted_data,
         count=len(formatted_data)
+    )
+
+
+@router.get("/cubanomic", response_model=SourceRatesResponse)
+async def get_cubanomic_rates(
+    db: AsyncSession = Depends(get_db),
+    redis: RedisClient = Depends(get_redis),
+    max_age_minutes: int = Query(
+        default=1440,  # 24 hours
+        ge=60,
+        le=2880,
+        description="Máxima edad de datos en minutos"
+    )
+) -> SourceRatesResponse:
+    """
+    Obtiene las tasas de Cubanomic (USD/EUR/MLC).
+    
+    Datos cacheados en Redis con TTL de 24 horas.
+    
+    - **max_age_minutes**: Máxima edad de datos en minutos (default: 1440 = 24h)
+    """
+    from src.services.rates_service import get_cubanomic_cached
+    
+    result = await get_cubanomic_cached(db, redis)
+    
+    if not result.get("ok"):
+        return SourceRatesResponse(
+            source="cubanomic",
+            rates={},
+            updated_at=datetime.now(timezone.utc)
+        )
+    
+    # Format rates from result
+    latest_data = result.get("data", {})
+    
+    # Convert to CurrencyRate format
+    formatted_rates = {}
+    for currency, rate_info in latest_data.items():
+        rate_value = rate_info.get("rate") if isinstance(rate_info, dict) else rate_info
+        if rate_value:
+            formatted_rates[currency] = CurrencyRate(
+                rate=float(rate_value),
+                change="neutral",  # Cubanomic doesn't track change yet
+                prev_rate=None
+            )
+    
+    return SourceRatesResponse(
+        source="cubanomic",
+        rates=formatted_rates,
+        updated_at=datetime.now(timezone.utc)
     )

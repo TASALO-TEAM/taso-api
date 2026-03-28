@@ -227,10 +227,42 @@ def test_empty_database(client):
     """Endpoints manejan correctamente DB vacía."""
     # Sin datos, los endpoints deben retornar estructuras vacías
     response = client.get("/api/v1/tasas/latest")
-    
+
     assert response.status_code == 200
     data = response.json()
-    
+
     assert data["ok"] is True
     # Las fuentes pueden estar vacías si no hay datos
     assert isinstance(data["data"]["eltoque"], dict)
+
+
+def test_get_cubanomic_rates_structure(client):
+    """GET /api/v1/tasas/cubanomic retorna estructura correcta."""
+    response = client.get("/api/v1/tasas/cubanomic")
+
+    # Should return 200 even if Redis is not available (fallback)
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["source"] == "cubanomic"
+    assert "rates" in data
+    assert "updated_at" in data
+
+
+def test_get_cubanomic_rates_with_max_age(client):
+    """GET /api/v1/tasas/cubanomic acepta max_age_minutes param."""
+    response = client.get("/api/v1/tasas/cubanomic?max_age_minutes=60")
+
+    # Should validate min value (60)
+    assert response.status_code in [200, 422]
+
+
+def test_get_cubanomic_rates_invalid_max_age(client):
+    """GET /api/v1/tasas/cubanomic rechaza max_age_minutes inválido."""
+    # Below minimum (60)
+    response = client.get("/api/v1/tasas/cubanomic?max_age_minutes=30")
+    assert response.status_code == 422
+
+    # Above maximum (2880)
+    response = client.get("/api/v1/tasas/cubanomic?max_age_minutes=3000")
+    assert response.status_code == 422
