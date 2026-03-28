@@ -28,7 +28,7 @@ async def fetch_binance(
     Obtiene precios de criptomonedas de Binance (API global).
 
     Args:
-        symbols: Lista de símbolos a consultar (default: top 20 criptomonedas vs USDT)
+        symbols: Lista de símbolos a consultar (default: top 21 criptomonedas vs USDT)
         base_url: URL base de la API de Binance (default: api.binance.com)
         timeout: Timeout en segundos
 
@@ -46,17 +46,29 @@ async def fetch_binance(
             result = {}
             for item in data:
                 symbol = item.get("symbol")
+                # Filter only the symbols we're interested in
                 if symbol in symbols:
                     # Extraer precio como float
                     result[symbol] = float(item.get("price", 0))
 
+            # Log how many symbols we got for debugging
+            if len(result) < len(symbols):
+                print(f"⚠️ Binance: Solo {len(result)}/{len(symbols)} símbolos obtenidos")
+                missing = set(symbols) - set(result.keys())
+                if missing:
+                    print(f"   Símbolos faltantes: {sorted(missing)[:10]}")  # Show first 10
+
             return result
 
-    except httpx.HTTPStatusError:
+    except httpx.HTTPStatusError as e:
+        print(f"❌ Binance HTTP error: {e.response.status_code}")
         return None
     except httpx.ReadTimeout:
+        print(f"⚠️ Binance timeout ({timeout}s)")
         return None
-    except httpx.RequestError:
+    except httpx.RequestError as e:
+        print(f"❌ Binance request error: {e}")
         return None
-    except (KeyError, ValueError, json.JSONDecodeError):
+    except (KeyError, ValueError, json.JSONDecodeError) as e:
+        print(f"❌ Binance parse error: {e}")
         return None
