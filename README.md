@@ -47,6 +47,7 @@
 | **CADECA** | Official exchange | USD, EUR | Every 5 min |
 | **BCC** | Central Bank | USD, EUR | Every 5 min |
 | **Binance** | Crypto P2P | USDT, BTC, ETH | Every 5 min |
+| **Cubanomic** | Multi-source | USD, EUR, MLC | Daily (00:01 UTC) |
 
 ### API Capabilities
 - **RESTful Design:** Standard HTTP methods and status codes
@@ -61,6 +62,11 @@
 - **Logging:** Structured JSON logs with configurable levels
 - **Error Handling:** Consistent error responses across all endpoints
 - **Async/Await:** High-performance non-blocking operations
+
+### Scheduler
+- **Automatic Refresh:** Tasas actualizadas automáticamente cada 5 minutos
+- **Cubanomic Daily:** Fetch diario a las 00:01 UTC
+- **Manual Trigger:** Endpoint admin para refresh manual
 
 ---
 
@@ -104,11 +110,13 @@ curl http://localhost:8040/api/v1/health
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | `GET` | `/api/v1/health` | ❌ | Health check & DB status |
-| `GET` | `/api/v1/tasas/latest` | ❌ | All rates combined |
-| `GET` | `/api/v1/tasas/eltoque` | ❌ | ElToque informal rates |
-| `GET` | `/api/v1/tasas/cadeca` | ❌ | CADECA official rates |
-| `GET` | `/api/v1/tasas/bcc` | ❌ | BCC central bank rates |
-| `GET` | `/api/v1/tasas/history` | ❌ | Historical rates |
+| `GET` | `/api/v1/tasas/latest` | ❌ | Tasas combinadas (ElToque, CADECA, BCC, Binance) |
+| `GET` | `/api/v1/tasas/eltoque` | ❌ | Tasas de ElToque |
+| `GET` | `/api/v1/tasas/cadeca` | ❌ | Tasas de CADECA (compra/venta) |
+| `GET` | `/api/v1/tasas/bcc` | ❌ | Tasas de BCC (oficial) |
+| `GET` | `/api/v1/tasas/cubanomic` | ❌ | Tasas de Cubanomic (USD/EUR/MLC) **NUEVO** |
+| `GET` | `/api/v1/tasas/history` | ❌ | Histórico (source, currency, days) |
+| `GET` | `/api/v1/tasas/history/cubanomic` | ❌ | Histórico Cubanomic (7d-2y) **NUEVO** |
 | `GET` | `/api/v1/admin/status` | ✅ | Scheduler status |
 | `POST` | `/api/v1/admin/refresh` | ✅ | Trigger manual refresh |
 
@@ -294,6 +302,61 @@ Copy `.env.example` to `.env` and configure:
 ```bash
 # Generate secure admin API key
 openssl rand -hex 32
+```
+
+---
+
+## 🗄️ Redis Configuration
+
+Redis se usa para cachear datos de Cubanomic y reducir la carga en la API externa.
+
+### Configuración
+
+```ini
+REDIS_URL=redis://localhost:6379/0
+REDIS_TTL_CUBANOMIC=86400  # 24 horas (cache latest)
+```
+
+### Instalación
+
+```bash
+# Ubuntu/Debian
+sudo apt install redis-server
+sudo systemctl enable redis
+sudo systemctl start redis
+
+# Verify
+redis-cli ping  # Should return: PONG
+```
+
+### Cachés
+
+| Endpoint | TTL | Descripción |
+|----------|-----|-------------|
+| `/api/v1/tasas/cubanomic` | 24h | Tasas actuales |
+| `/api/v1/tasas/history/cubanomic?days=X` | 1h | Histórico por rango de días |
+
+---
+
+## ⏰ Scheduler
+
+### Jobs Programados
+
+| Job | Frecuencia | Hora | Descripción |
+|-----|------------|------|-------------|
+| `refresh_all` | Cada 5 min | — | Refresca tasas de ElToque, CADECA, BCC, Binance |
+| `cubanomic_daily` | Diario | 00:01 UTC | Fetch de Cubanomic (USD/EUR/MLC) |
+
+### Ver Status
+
+```bash
+# Ver status del scheduler
+curl http://localhost:8040/api/v1/admin/status \
+  -H "X-API-Key: your_admin_key"
+
+# Trigger refresh manual
+curl -X POST http://localhost:8040/api/v1/admin/refresh \
+  -H "X-API-Key: your_admin_key"
 ```
 
 ---
