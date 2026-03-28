@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import get_settings
 from src.models.scheduler_status import SchedulerStatus
-from src.services import rates_service
+from src.services.rates_service import fetch_all_sources, save_snapshot, save_history_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +150,6 @@ async def refresh_all(db_factory: Callable) -> None:
                     await save_snapshot(session, source, data)
 
             # NEW: Save to history snapshots
-            from src.services.rates_service import save_history_snapshot
             await save_history_snapshot(session, results)
 
             # 3. Actualizar scheduler_status con éxito
