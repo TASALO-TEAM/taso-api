@@ -2,6 +2,8 @@
 
 Thank you for your interest in contributing to TASALO API! This document provides guidelines and instructions for contributing to this project.
 
+**Note:** TASALO API is part of the larger TASALO ecosystem. See the [main repository](https://github.com/TASALO-TEAM/tasalo) for the full project structure.
+
 ## 📋 Table of Contents
 
 - [Code of Conduct](#code-of-conduct)
@@ -31,15 +33,21 @@ This project adheres to the [Contributor Covenant Code of Conduct](https://www.c
 
 ## Getting Started
 
-1. **Fork the repository** on GitHub
+**Important:** TASALO API is part of a monorepo structure. The main repository is at `/home/ersus/tasalo/` containing:
+- `taso-api/` — Backend FastAPI (this component)
+- `taso-bot/` — Telegram Bot
+- `taso-app/` — Telegram Mini App
+- `taso-ext/` — Browser Extension
+
+1. **Fork the repository** on GitHub (from the main TASALO repo)
 2. **Clone your fork** locally:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/taso-api.git
-   cd taso-api
+   git clone https://github.com/YOUR_USERNAME/tasalo.git
+   cd tasalo/taso-api
    ```
 3. **Add the upstream remote**:
    ```bash
-   git remote add upstream https://github.com/tasalo/taso-api.git
+   git remote add upstream https://github.com/TASALO-TEAM/tasalo.git
    ```
 4. **Set up your development environment** (see [Development Setup](#development-setup))
 
@@ -50,14 +58,15 @@ This project adheres to the [Contributor Covenant Code of Conduct](https://www.c
 ### Reporting Bugs
 
 **Before submitting a bug report:**
-- Check if the issue has already been reported in [GitHub Issues](https://github.com/tasalo/taso-api/issues)
+- Check if the issue has already been reported in [GitHub Issues](https://github.com/TASALO-TEAM/tasalo/issues)
 - Verify the bug exists in the latest version
+- Check which component is affected (taso-api, taso-bot, taso-app, etc.)
 
 **How to file a bug report:**
 
 Use the GitHub Issue template and include:
 
-1. **Title**: Clear and descriptive (e.g., "ElToque scraper fails with 403 error")
+1. **Title**: Clear and descriptive with component prefix (e.g., "[taso-api] ElToque scraper fails with 403 error")
 2. **Description**:
    - What you expected to happen
    - What actually happened
@@ -65,7 +74,7 @@ Use the GitHub Issue template and include:
 3. **Environment**:
    - Python version (`python --version`)
    - OS and version
-   - TASALO API version
+   - TASALO version and component
 4. **Logs**: Relevant error messages (use code blocks)
 5. **Additional context**: Screenshots, related issues, etc.
 
@@ -74,12 +83,13 @@ Use the GitHub Issue template and include:
 ### Suggesting Features
 
 **Before suggesting a feature:**
-- Check existing [feature requests](https://github.com/tasalo/taso-api/issues?q=is%3Aissue+label%3Aenhancement)
+- Check existing [feature requests](https://github.com/TASALO-TEAM/tasalo/issues?q=is%3Aissue+label%3Aenhancement)
 - Ensure it aligns with project scope (exchange rates for Cuba)
+- Consider which component it affects (taso-api, taso-bot, taso-app)
 
 **How to submit a feature request:**
 
-1. **Title**: Start with "[Feature Request]"
+1. **Title**: Start with "[Feature Request]" and component (e.g., "[taso-api] Add support for XYZ source")
 2. **Problem statement**: What problem does this solve?
 3. **Proposed solution**: How should it work?
 4. **Use cases**: Who will benefit from this?
@@ -93,10 +103,11 @@ Use the GitHub Issue template and include:
 
 1. **Create a branch** from `main`:
    ```bash
-   git checkout -b feature/your-feature-name
+   git checkout -b feature/taso-api-your-feature-name
    # or
-   git checkout -b fix/issue-number-description
+   git checkout -b fix/taso-api-issue-number-description
    ```
+   **Note:** Use component prefix in branch names (taso-api-, taso-bot-, etc.)
 
 2. **Make your changes** following [Coding Standards](#coding-standards)
 
@@ -113,10 +124,10 @@ Use the GitHub Issue template and include:
 
 7. **Push to your fork**:
    ```bash
-   git push origin feature/your-feature-name
+   git push origin feature/taso-api-your-feature-name
    ```
 
-8. **Open a Pull Request** on GitHub
+8. **Open a Pull Request** on GitHub (to the TASALO main repo)
 
 **PR Checklist:**
 - [ ] Tests added/updated
@@ -124,6 +135,7 @@ Use the GitHub Issue template and include:
 - [ ] Changelog updated (if applicable)
 - [ ] No linting errors
 - [ ] All CI checks passing
+- [ ] Component prefix in branch name
 
 **PR Review Process:**
 1. Maintainer reviews code within 48-72 hours
@@ -144,10 +156,10 @@ Use the GitHub Issue template and include:
 
 ### Installation
 
-1. **Clone the repository:**
+1. **Clone the TASALO repository:**
    ```bash
-   git clone https://github.com/tasalo/taso-api.git
-   cd taso-api
+   git clone https://github.com/TASALO-TEAM/tasalo.git
+   cd tasalo/taso-api
    ```
 
 2. **Create virtual environment with uv:**
@@ -277,9 +289,24 @@ pytest tests/test_scrapers/ -v
 
 ## Questions?
 
-- **General questions:** Open a [Discussion](https://github.com/tasalo/taso-api/discussions)
-- **Bug reports:** Open an [Issue](https://github.com/tasalo/taso-api/issues)
+- **General questions:** Open a [Discussion](https://github.com/TASALO-TEAM/tasalo/discussions)
+- **Bug reports:** Open an [Issue](https://github.com/TASALO-TEAM/tasalo/issues) (include component prefix)
 - **Security issues:** Email security@tasalo.app (do not open public issue)
+
+---
+
+## TASALO Ecosystem
+
+TASALO consists of multiple components:
+
+| Component | Description | Stack |
+|-----------|-------------|-------|
+| **taso-api** | Backend FastAPI | FastAPI, PostgreSQL, SQLAlchemy |
+| **taso-bot** | Telegram Bot | python-telegram-bot |
+| **taso-app** | Telegram Mini App | Flask, Tailwind CSS |
+| **taso-ext** | Browser Extension | Vanilla JS (Manifest V3) |
+
+Each component has its own CONTRIBUTING.md with specific guidelines.
 
 ---
 

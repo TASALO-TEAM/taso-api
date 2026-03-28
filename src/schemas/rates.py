@@ -69,9 +69,36 @@ class HistorySnapshot(BaseModel):
     fetched_at: datetime = Field(..., description="Cuándo se obtuvo el dato")
 
 
+class CubanomicHistorySnapshot(BaseModel):
+    """Snapshot para histórico de Cubanomic con rates explícitos.
+    
+    Este schema extiende HistorySnapshot para incluir campos específicos
+    que el frontend espera para los gráficos de Cubanomic.
+    """
+    
+    source: str = Field("cubanomic", description="Fuente de datos")
+    currency: str = Field("MULTI", description="Moneda (MULTI para múltiple)")
+    buy_rate: float | None = Field(None, description="Tasa de compra (USD)")
+    sell_rate: float | None = Field(None, description="Tasa de venta (EUR)")
+    fetched_at: datetime | str = Field(..., description="Cuándo se obtuvo el dato")
+    
+    # Campos explícitos para el frontend de Cubanomic
+    usd_rate: float | None = Field(None, description="Tasa del USD")
+    eur_rate: float | None = Field(None, description="Tasa del EUR")
+    mlc_rate: float | None = Field(None, description="Tasa del MLC")
+
+
 class HistoryResponse(BaseModel):
     """Respuesta para consulta histórica."""
 
     ok: bool = Field(True, description="Estado de la respuesta")
     data: list[HistorySnapshot] = Field(..., description="Lista de snapshots históricos")
+    count: int = Field(..., description="Cantidad de registros")
+
+
+class CubanomicHistoryResponse(BaseModel):
+    """Respuesta para histórico de Cubanomic con rates explícitos."""
+    
+    ok: bool = Field(True, description="Estado de la respuesta")
+    data: list[CubanomicHistorySnapshot] = Field(..., description="Lista de snapshots con USD/EUR/MLC")
     count: int = Field(..., description="Cantidad de registros")

@@ -17,6 +17,8 @@ from src.schemas.rates import (
     HistoryResponse,
     HistorySnapshot,
     HistoryQueryParams,
+    CubanomicHistoryResponse,
+    CubanomicHistorySnapshot,
 )
 
 
@@ -304,7 +306,7 @@ async def get_cubanomic_rates(
     )
 
 
-@router.get("/history/cubanomic", response_model=HistoryResponse)
+@router.get("/history/cubanomic", response_model=CubanomicHistoryResponse)
 async def get_cubanomic_history(
     days: int = Query(
         default=30,
@@ -314,12 +316,18 @@ async def get_cubanomic_history(
     ),
     db: AsyncSession = Depends(get_db),
     redis: RedisClient = Depends(get_redis)
-) -> HistoryResponse:
+) -> CubanomicHistoryResponse:
     """
     Obtiene histórico de Cubanomic (USD/EUR/MLC).
 
     Rangos disponibles: 7d, 14d, 30d, 60d, 90d, 6m (180d), 1y (365d), 2y (730d)
     Datos cacheados en Redis por fuente y rango de días.
+    
+    El endpoint agrupa los datos por fecha, retornando un punto por día con:
+    - usd_rate: tasa del USD
+    - eur_rate: tasa del EUR
+    - mlc_rate: tasa del MLC
+    - fetched_at: fecha de captura
     """
     cache_key = f"cubanomic:history:{days}"
 
@@ -327,19 +335,12 @@ async def get_cubanomic_history(
     cached = await redis.get(cache_key)
     if cached:
         logger.info(f"♻️ Cubanomic history cache HIT for {days} days")
-        return HistoryResponse(
+        # Transform cached data to grouped format
+        grouped_data = _group_cubanomic_history_by_date(cached)
+        return CubanomicHistoryResponse(
             ok=True,
-            data=[
-                HistorySnapshot(
-                    source="cubanomic",
-                    currency="MULTI",
-                    buy_rate=None,
-                    sell_rate=None,
-                    fetched_at=point["date"]
-                )
-                for point in cached
-            ],
-            count=len(cached)
+            data=grouped_data,
+            count=len(grouped_data)
         )
 
     # Fetch from Cubanomic API
@@ -347,24 +348,73 @@ async def get_cubanomic_history(
     result = await fetch_cubanomic(days=days)
 
     if not result.get("ok"):
-        return HistoryResponse(ok=False, data=[], count=0)
+        return CubanomicHistoryResponse(ok=False, data=[], count=0)
 
     history = result.get("history", [])
+
+    # Group by date and transform to format expected by frontend
+    grouped_data = _group_cubanomic_history_by_date(history)
 
     # Cache for 1 hour (historical data changes less frequently)
     await redis.set(cache_key, history, ttl=3600)
 
-    return HistoryResponse(
+    return CubanomicHistoryResponse(
         ok=True,
-        data=[
-            HistorySnapshot(
-                source="cubanomic",
-                currency="MULTI",
-                buy_rate=None,
-                sell_rate=None,
-                fetched_at=point["date"]
-            )
-            for point in history
-        ],
-        count=len(history)
+        data=grouped_data,
+        count=len(grouped_data)
     )
+
+
+def _group_cubanomic_history_by_date(history: list) -> list[CubanomicHistorySnapshot]:
+    """
+    Agrupa histórico de Cubanomic por fecha, combinando USD/EUR/MLC rates.
+    
+    Args:
+        history: Lista de puntos {"date": "...", "currency": "USD", "rate": 517.26}
+    
+    Returns:
+        Lista agrupada por fecha con todos los rates:
+        [
+            {
+                "source": "cubanomic",
+                "currency": "MULTI",
+                "fetched_at": "2026-03-28T00:00:00Z",
+                "usd_rate": 517.26,
+                "eur_rate": 582.36,
+                "mlc_rate": 394.82
+            }
+        ]
+    """
+    from collections import defaultdict
+    
+    # Group by date
+    by_date: dict[str, dict[str, float]] = defaultdict(dict)
+    
+    for point in history:
+        date = point.get("date")
+        currency = point.get("currency")
+        rate = point.get("rate")
+        
+        if date and currency and rate is not None:
+            by_date[date][currency] = rate
+    
+    # Build grouped snapshots
+    grouped = []
+    for date, rates in sorted(by_date.items()):
+        usd_rate = rates.get("USD")
+        eur_rate = rates.get("EUR")
+        mlc_rate = rates.get("MLC")
+        
+        snapshot = CubanomicHistorySnapshot(
+            source="cubanomic",
+            currency="MULTI",
+            buy_rate=usd_rate,  # USD as primary
+            sell_rate=eur_rate,  # EUR as secondary
+            fetched_at=date,
+            usd_rate=usd_rate,
+            eur_rate=eur_rate,
+            mlc_rate=mlc_rate
+        )
+        grouped.append(snapshot)
+    
+    return grouped
