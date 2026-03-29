@@ -3,7 +3,7 @@
 import json
 from datetime import datetime
 from typing import Optional, Dict, Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class ImageSnapshotSchema(BaseModel):
@@ -34,14 +34,16 @@ class ImageSnapshotSchema(BaseModel):
 
 class UserImageAlertSchema(BaseModel):
     """Schema for UserImageAlert."""
-    
+
     user_id: int
     alert_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
     format_type: str = Field(..., pattern=r"^(photo|document)$")
     enabled: bool
     created_at: datetime
     updated_at: Optional[datetime] = None
-    
+
+    model_config = ConfigDict(from_attributes=True)
+
     @field_validator("alert_time")
     @classmethod
     def validate_time(cls, v: str) -> str:
