@@ -118,8 +118,17 @@ curl http://localhost:8040/api/v1/health
 | `GET` | `/api/v1/tasas/history` | ❌ | Histórico (source, currency, days) |
 | `GET` | `/api/v1/tasas/history/cubanomic` | ❌ | Histórico Cubanomic (7d-2y) **NUEVO** |
 | `GET` | `/api/v1/tasas/history/local` | ❌ | Histórico local (1d-2y) **NUEVO** |
+| `POST` | `/api/v1/images/eltoque/capture` | ❌ | Capturar imagen ElToque **NUEVO** |
+| `GET` | `/api/v1/images/eltoque/latest` | ❌ | Última imagen capturada **NUEVO** |
+| `GET` | `/api/v1/images/eltoque/{date}` | ❌ | Imagen por fecha (YYYY-MM-DD) **NUEVO** |
+| `GET` | `/api/v1/images/eltoque/file/latest` | ❌ | Descargar archivo de imagen **NUEVO** |
+| `GET` | `/api/v1/images/alerts/{user_id}` | ❌ | Obtener alerta de usuario **NUEVO** |
+| `POST` | `/api/v1/images/alerts` | ❌ | Crear/actualizar alerta **NUEVO** |
+| `DELETE` | `/api/v1/images/alerts/{user_id}` | ❌ | Eliminar alerta **NUEVO** |
+| `POST` | `/api/v1/images/alerts/{user_id}/disable` | ❌ | Desactivar alerta **NUEVO** |
+| `GET` | `/api/v1/images/alerts` | ❌ | Obtener alertas activas **NUEVO** |
 | `GET` | `/api/v1/admin/status` | ✅ | Scheduler status |
-| `POST` | `/api/v1/admin/refresh` | ✅ | Trigger manual refresh |
+| `POST` | `/api/v1/admin/refresh` | ✅ | Trigger manual refresh | |
 
 ### Authentication
 
