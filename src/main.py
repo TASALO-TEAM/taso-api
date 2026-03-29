@@ -17,6 +17,7 @@ from src.database import get_engine
 from src.routers import rates as rates_router
 from src.routers import admin as admin_router
 from src.routers import stats as stats_router
+from src.routers import images as images_router
 from src.services.scheduler import create_scheduler, init_scheduler_status, init_cubanomic_scheduler
 
 settings = get_settings()
@@ -103,6 +104,7 @@ app.add_middleware(
 app.include_router(rates_router.router, prefix="/api/v1/tasas", tags=["Tasas"])
 app.include_router(admin_router.router, prefix="/api/v1/admin", tags=["Admin"])
 app.include_router(stats_router.router, prefix="/api/v1/admin/stats", tags=["Admin Stats"])
+app.include_router(images_router.router, tags=["Images"])
 
 
 @app.get("/api/v1/health", tags=["Health"])
