@@ -1,8 +1,7 @@
 """ImageSnapshot model for storing captured images."""
 
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, DateTime, Text, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Column, Integer, String, DateTime, Text, func, JSON
 
 from src.database import Base
 
@@ -23,7 +22,7 @@ class ImageSnapshot(Base):
         default=lambda: datetime.now(timezone.utc),
         index=True
     )
-    metadata = Column(JSONB, nullable=True)  # {width, height, url, etc.}
+    extra_data = Column(JSON, nullable=True)  # {width, height, url, etc.}
 
     def __repr__(self) -> str:
         return f"<ImageSnapshot(source={self.source}, id={self.id}, captured_at={self.captured_at})>"
