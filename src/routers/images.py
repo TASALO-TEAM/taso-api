@@ -1,10 +1,14 @@
 """Router for image endpoints."""
 
+import json
+import logging
 import os
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from src.database import get_db
 from src.services.image_capture import capture_and_store_image, get_latest_image, get_image_by_date
@@ -134,19 +138,27 @@ async def create_update_alert_endpoint(
     """
     Crear o actualizar alerta de usuario.
     """
-    alert = await create_update_alert(
-        db,
-        user_id=alert_data.user_id,
-        alert_time=alert_data.alert_time,
-        format_type=alert_data.format_type,
-        enabled=alert_data.enabled
-    )
-    
-    return APIResponse(
-        ok=True,
-        data=UserImageAlertSchema.model_validate(alert),
-        count=1
-    )
+    try:
+        logger.info(f"Creating alert: user_id={alert_data.user_id}, time={alert_data.alert_time}")
+        
+        alert = await create_update_alert(
+            db,
+            user_id=alert_data.user_id,
+            alert_time=alert_data.alert_time,
+            format_type=alert_data.format_type,
+            enabled=alert_data.enabled
+        )
+
+        logger.info(f"Alert created successfully: {alert}")
+
+        return APIResponse(
+            ok=True,
+            data=UserImageAlertSchema.model_validate(alert),
+            count=1
+        )
+    except Exception as e:
+        logger.error(f"Error creating alert: {e}", exc_info=True)
+        raise
 
 
 @router.delete("/alerts/{user_id}", response_model=APIResponse)
