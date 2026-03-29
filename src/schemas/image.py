@@ -1,5 +1,6 @@
 """Pydantic schemas for image endpoints."""
 
+import json
 from datetime import datetime
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field, field_validator
@@ -7,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class ImageSnapshotSchema(BaseModel):
     """Schema for ImageSnapshot."""
-    
+
     id: int
     source: str
     image_path: str
@@ -15,9 +16,20 @@ class ImageSnapshotSchema(BaseModel):
     file_size: Optional[int] = None
     captured_at: datetime
     extra_data: Optional[Dict[str, Any]] = None
-    
+
     class Config:
         from_attributes = True
+
+    @field_validator("extra_data", mode="before")
+    @classmethod
+    def parse_extra_data(cls, v):
+        """Parse JSON string to dict if needed (SQLite stores JSON as string)."""
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                return None
+        return v
 
 
 class UserImageAlertSchema(BaseModel):
