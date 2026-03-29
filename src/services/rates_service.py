@@ -801,10 +801,20 @@ async def save_history_snapshot(db: AsyncSession, rates_data: dict) -> None:
     logger.info(f"📊 History snapshot saved: {snapshot.fetched_at}")
 
 
-def _average_cadeca_rate(rate_data: dict) -> float | None:
-    """Calculate average of buy/sell rates for CADECA/BCC."""
+def _average_cadeca_rate(rate_data: dict | float) -> float | None:
+    """Calculate average of buy/sell rates for CADECA/BCC.
+    
+    Args:
+        rate_data: Can be dict {'buy': float, 'sell': float} or float directly
+    """
     if not rate_data:
         return None
+    
+    # BCC returns float directly, CADECA returns dict
+    if isinstance(rate_data, (int, float)):
+        return float(rate_data)
+    
+    # CADECA format: {'buy': float, 'sell': float}
     buy = rate_data.get('buy')
     sell = rate_data.get('sell')
     if buy and sell:
