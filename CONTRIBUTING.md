@@ -304,9 +304,22 @@ TASALO consists of multiple components:
 | **taso-api** | Backend FastAPI | FastAPI, PostgreSQL, SQLAlchemy |
 | **taso-bot** | Telegram Bot | python-telegram-bot |
 | **taso-app** | Telegram Mini App | Flask, Tailwind CSS |
-| **taso-ext** | Browser Extension | Vanilla JS (Manifest V3) |
+| **taso-ext** | Browser Extension (Chrome/Chromium) | Vanilla JS (Manifest V3) |
+| **taso-extmf** | Browser Extension (Firefox) | Vanilla JS (Manifest V3) |
 
 Each component has its own CONTRIBUTING.md with specific guidelines.
+
+### Extension Repositories
+
+- **taso-ext** (Chrome/Chromium): https://github.com/TASALO-TEAM/taso-ext
+  - Compatible: Chrome, Edge, Brave, Opera, Arc
+  - Latest: v0.4.5
+  - Install: Load unpacked from repository
+
+- **taso-extmf** (Firefox): https://github.com/TASALO-TEAM/taso-extmf
+  - Compatible: Firefox Desktop 140+, Firefox Android 142+
+  - Latest: v0.1.2-android
+  - Install: [Mozilla Add-ons (Desktop)](https://addons.mozilla.org/es-ES/firefox/addon/tasalo-tasas-de-cambio-cuba/) | [Mozilla Add-ons (Android)](https://addons.mozilla.org/es-ES/firefox/addon/tasalo-cambio-cuba-android/)
 
 ---
 
