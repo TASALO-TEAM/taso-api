@@ -39,7 +39,12 @@ async def capture_eltoque_image_endpoint(
     result = await capture_and_store_image(db, source="eltoque")
     
     if not result["success"]:
-        raise HTTPException(status_code=500, detail=result.get("error"))
+        error_msg = result.get("error", "Unknown error")
+        logger.error("Capture failed: %s", error_msg)
+        return APIResponse(
+            ok=False,
+            error={"code": 500, "message": error_msg, "path": "/api/v1/images/eltoque/capture"}
+        )
     
     return APIResponse(
         ok=True,
