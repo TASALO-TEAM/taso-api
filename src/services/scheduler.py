@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import get_settings
 from src.models.scheduler_status import SchedulerStatus
 from src.services.rates_service import fetch_all_sources, save_snapshot, save_history_snapshot
+from src.services.image_capture import capture_and_store_image
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ def create_scheduler(db_factory: Callable) -> AsyncIOScheduler:
     Jobs:
     - refresh_all: Ejecuta fetch_all_sources() cada N minutos (env)
     - cubanomic_daily: Ejecuta fetch_cubanomic_daily() a las 00:01 UTC
+    - eltoque_image_capture: Captura imagen diaria de ElToque a las 06:00 UTC
 
     Returns:
         AsyncIOScheduler configurado
@@ -122,6 +124,48 @@ async def init_cubanomic_scheduler(
         replace_existing=True,
     )
     print("✅ [Scheduler] Cubanomic daily job added (00:01 UTC)")
+
+
+async def init_image_capture_scheduler(
+    scheduler: AsyncIOScheduler,
+    db_factory: Callable[[], AsyncSession]
+) -> None:
+    """
+    Initialize ElToque image capture job.
+
+    Args:
+        scheduler: AsyncIOScheduler instance
+        db_factory: Factory function that creates DB sessions
+
+    Job:
+    - capture_eltoque_image: Runs daily at 06:00 UTC (morning in Cuba)
+    """
+
+    async def capture_eltoque_image_job() -> None:
+        """Capture ElToque image daily at 06:00 UTC."""
+        db = db_factory()
+        try:
+            async with db:
+                result = await capture_and_store_image(db, source="eltoque")
+                if result.get("success"):
+                    logger.info(f"📸 ElToque image captured: {result.get('image')}")
+                else:
+                    logger.error(f"❌ ElToque image capture failed: {result.get('error')}")
+        except Exception as e:
+            logger.error(f"❌ ElToque image capture failed: {e}")
+
+    # Run daily at 06:00 UTC (morning in Cuba, good time for rates)
+    scheduler.add_job(
+        capture_eltoque_image_job,
+        trigger="cron",
+        hour=6,
+        minute=0,
+        timezone="UTC",
+        id="eltoque_image_capture",
+        name="Capture ElToque daily image",
+        replace_existing=True,
+    )
+    print("✅ [Scheduler] ElToque image capture job added (06:00 UTC)")
 
 
 async def refresh_all(db_factory: Callable) -> None:

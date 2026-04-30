@@ -5,7 +5,7 @@ import os
 from datetime import datetime, timezone
 from typing import Dict, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, cast, Date
 
 from src.models.image_snapshot import ImageSnapshot
 from src.scrapers.images import capture_eltoque_image, ensure_directory_exists
@@ -13,6 +13,11 @@ from src.scrapers.images import capture_eltoque_image, ensure_directory_exists
 
 # Configuration
 IMAGE_STORAGE_PATH = "/home/ersus/tasalo/taso-api/static/images/eltoque"
+
+
+def get_storage_path() -> str:
+    """Get the image storage path, checking for environment variable override."""
+    return os.environ.get("TASALO_IMAGE_STORAGE_PATH", IMAGE_STORAGE_PATH)
 
 
 async def capture_and_store_image(
@@ -30,13 +35,15 @@ async def capture_and_store_image(
         dict: {success: bool, image: Optional[ImageSnapshot], error: Optional[str]}
     """
     try:
+        storage_path = get_storage_path()
+        
         # Asegurar directorio existe
-        ensure_directory_exists(f"{IMAGE_STORAGE_PATH}/placeholder.jpg")
+        ensure_directory_exists(f"{storage_path}/placeholder.jpg")
         
         # Generar filename con timestamp
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         filename = f"{source}_{timestamp}.jpg"
-        output_path = os.path.join(IMAGE_STORAGE_PATH, filename)
+        output_path = os.path.join(storage_path, filename)
         
         # Capturar imagen
         result = await capture_eltoque_image(output_path)
@@ -93,6 +100,35 @@ async def get_latest_image(
     stmt = (
         select(ImageSnapshot)
         .where(ImageSnapshot.source == source)
+        .order_by(ImageSnapshot.captured_at.desc())
+        .limit(1)
+    )
+    
+    result = await db.execute(stmt)
+    return result.scalars().first()
+
+
+async def get_today_image(
+    db: AsyncSession,
+    source: str = "eltoque"
+) -> Optional[ImageSnapshot]:
+    """
+    Obtiene la imagen del día actual para una fuente.
+    Si no hay imagen del día, devuelve None.
+    
+    Args:
+        db: Database session
+        source: Source name
+    
+    Returns:
+        ImageSnapshot or None
+    """
+    today = datetime.now(timezone.utc).date()
+    
+    stmt = (
+        select(ImageSnapshot)
+        .where(ImageSnapshot.source == source)
+        .where(func.date(ImageSnapshot.captured_at) == today)
         .order_by(ImageSnapshot.captured_at.desc())
         .limit(1)
     )

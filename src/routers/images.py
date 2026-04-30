@@ -11,7 +11,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 from src.database import get_db
-from src.services.image_capture import capture_and_store_image, get_latest_image, get_image_by_date
+from src.services.image_capture import capture_and_store_image, get_latest_image, get_image_by_date, get_today_image
 from src.services.image_alert_service import (
     get_user_alert,
     create_update_alert,
@@ -64,6 +64,30 @@ async def get_latest_eltoque_image(
     
     if not image:
         raise HTTPException(status_code=404, detail="No images found")
+    
+    return APIResponse(
+        ok=True,
+        data=ImageSnapshotSchema.model_validate(image),
+        count=1
+    )
+
+
+@router.get("/eltoque/today", response_model=APIResponse)
+async def get_today_eltoque_image(
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Obtener imagen de ElToque capturada HOY.
+    Útil para verificar si se capturó la imagen del día actual.
+    """
+    image = await get_today_image(db, source="eltoque")
+    
+    if not image:
+        return APIResponse(
+            ok=True,
+            data=None,
+            count=0
+        )
     
     return APIResponse(
         ok=True,
