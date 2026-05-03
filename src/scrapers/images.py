@@ -1,5 +1,6 @@
-"""Image scraper for capturing screenshots from web pages using Playwright."""
+"""Image scraper for capturing screenshots from web pages using Playwright and Selenium."""
 
+import asyncio
 import os
 import logging
 from pathlib import Path
@@ -7,6 +8,18 @@ from typing import Dict, Optional
 from playwright.async_api import async_playwright, Error as PlaywrightError
 
 logger = logging.getLogger(__name__)
+
+# Check if selenium is available at module load time
+try:
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.chrome.options import Options
+    from selenium.common.exceptions import WebDriverException
+    SELENIUM_AVAILABLE = True
+except ImportError:
+    SELENIUM_AVAILABLE = False
 
 
 async def capture_eltoque_image(
@@ -105,47 +118,74 @@ async def _capture_with_playwright(output_path: str, timeout: int) -> Dict:
 
 async def _capture_with_selenium(output_path: str, timeout: int) -> Dict:
     """Capture image using Selenium as fallback."""
-    try:
-        from selenium import webdriver
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        from selenium.webdriver.chrome.options import Options
-        
-        # Configurar Chrome headless
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--window-size=1920,1080")
-        
-        driver = webdriver.Chrome(options=chrome_options)
-        
+    if not SELENIUM_AVAILABLE:
+        return {
+            "success": False,
+            "error": "Selenium not installed. Run: pip install selenium webdriver-manager"
+        }
+    
+    def _capture_sync():
+        """Synchronous capture running in thread pool."""
         try:
-            driver.get("https://iframe.cubanomic.com/")
+            from selenium import webdriver
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+            from selenium.webdriver.chrome.options import Options
+            from selenium.webdriver.chrome.service import Service
+            from webdriver_manager.chrome import ChromeDriverManager
             
-            # Esperar a que cargue la imagen
-            wait = WebDriverWait(driver, timeout // 1000)
-            img_element = wait.until(
-                EC.presence_of_element_located((By.ID, "imgtasa"))
-            )
+            # Configure headless Chrome
+            chrome_options = Options()
+            chrome_options.add_argument("--headless=new")
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            chrome_options.add_argument("--window-size=1920,1080")
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--disable-extensions")
             
-            # Tomar screenshot
-            img_element.screenshot(output_path)
+            # Use webdriver-manager to auto-install/update chromedriver
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=chrome_options)
             
-            file_size = os.path.getsize(output_path)
-            
-            return {
-                "success": True,
-                "width": 800,  # Ancho típico
-                "height": 600,  # Alto típico
-                "file_size": file_size
-            }
-        finally:
-            driver.quit()
-            
+            try:
+                driver.set_page_load_timeout(timeout // 1000)
+                driver.get("https://iframe.cubanomic.com/")
+                
+                # Wait for image to load
+                wait = WebDriverWait(driver, timeout // 1000)
+                img_element = wait.until(
+                    EC.presence_of_element_located((By.ID, "imgtasa"))
+                )
+                
+                # Capture screenshot
+                img_element.screenshot(output_path)
+                
+                file_size = os.path.getsize(output_path)
+                
+                return {
+                    "success": True,
+                    "width": 800,
+                    "height": 600,
+                    "file_size": file_size
+                }
+            finally:
+                driver.quit()
+                
+        except WebDriverException as e:
+            return {"success": False, "error": f"Selenium WebDriver error: {e}"}
+        except Exception as e:
+            return {"success": False, "error": f"Selenium error: {e}"}
+    
+    try:
+        # Run blocking Selenium code in thread pool to avoid blocking event loop
+        result = await asyncio.to_thread(_capture_sync)
+        return result
     except Exception as e:
-        return {"success": False, "error": f"Selenium error: {e}"}
+        return {
+            "success": False,
+            "error": f"Thread execution error: {str(e)}"
+        }
 
 
 async def ensure_directory_exists(output_path: str) -> None:
