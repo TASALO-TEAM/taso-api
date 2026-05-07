@@ -1,6 +1,5 @@
 """Database configuration and session management."""
 
-import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, declared_attr
 
@@ -14,10 +13,7 @@ class Base(DeclarativeBase):
         return cls.__name__.lower()
 
 
-# Database URL from environment
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./tasalo.db")
-
-# Engine and session factory (global fallback)
+# Engine and session factory (initialized by get_engine)
 _engine = None
 async_session_factory = None
 
@@ -25,7 +21,7 @@ async_session_factory = None
 def get_engine(database_url: str, echo: bool = False):
     """Crear engine de SQLAlchemy según el tipo de base de datos."""
     global _engine, async_session_factory
-    
+
     if database_url.startswith("sqlite"):
         # SQLite necesita connect_args para async
         _engine = create_async_engine(
@@ -40,13 +36,13 @@ def get_engine(database_url: str, echo: bool = False):
             echo=echo,
             pool_pre_ping=True,  # Verificar conexiones antes de usar
         )
-    
+
     async_session_factory = async_sessionmaker(
         _engine,
         class_=AsyncSession,
         expire_on_commit=False,
     )
-    
+
     return _engine
 
 
@@ -72,8 +68,11 @@ async def get_db():
     # Inicializar engine si no existe
     global async_session_factory
     if async_session_factory is None:
-        get_engine(DATABASE_URL, echo=False)
-    
+        # Lazy-load de configuración Pydantic (evita dependencia circular en importación)
+        from src.config import get_settings
+        settings = get_settings()
+        get_engine(settings.database_url, echo=False)
+
     async with async_session_factory() as session:
         try:
             yield session

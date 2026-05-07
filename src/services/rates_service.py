@@ -795,30 +795,71 @@ async def save_history_snapshot(db: AsyncSession, rates_data: dict) -> None:
     Save a snapshot of all rates to the history_snapshots table.
     Called automatically by the scheduler every 5 minutes.
 
-    Args:
-        db: AsyncSession database session
-        rates_data: dict with format from fetch_all_sources()
+    Accepts both raw scraper formats and normalized test formats.
     """
     from src.models.rates import HistorySnapshot
     from datetime import datetime
 
+    # --- ElToque ---
+    eltoque_data = rates_data.get('eltoque') or {}
+    if 'tasas' in eltoque_data:
+        # Raw API format: {"tasas": {"USD": 365, "EUR": ..., "MLC": ...}}
+        eltoque_tasas = eltoque_data.get('tasas') or {}
+        eltoque_usd = eltoque_tasas.get('USD')
+        eltoque_eur = eltoque_tasas.get('EUR')
+        eltoque_mlc = eltoque_tasas.get('MLC')
+    else:
+        # Normalized test format: {"USD": {"rate": 517.26, ...}, ...}
+        eltoque_usd = eltoque_data.get('USD', {}).get('rate')
+        eltoque_eur = eltoque_data.get('EUR', {}).get('rate')
+        eltoque_mlc = eltoque_data.get('MLC', {}).get('rate')
+
+    # --- CADECA ---
+    cadeca_data = rates_data.get('cadeca') or {}
+    # For each currency, value can be dict with 'compra'/'venta' (raw) or 'buy'/'sell' (normalized)
+    def _extract_cadeca_rate(currency_data):
+        if not currency_data:
+            return None
+        # If it's a dict, try _average_cadeca_rate; if it's numeric, return directly
+        if isinstance(currency_data, (int, float)):
+            return float(currency_data)
+        return _average_cadeca_rate(currency_data)
+    cadeca_usd = _extract_cadeca_rate(cadeca_data.get('USD'))
+    cadeca_eur = _extract_cadeca_rate(cadeca_data.get('EUR'))
+    cadeca_mlc = _extract_cadeca_rate(cadeca_data.get('MLC'))
+
+    # --- BCC ---
+    bcc_data = rates_data.get('bcc') or {}
+    bcc_usd = _extract_cadeca_rate(bcc_data.get('USD'))
+    bcc_eur = _extract_cadeca_rate(bcc_data.get('EUR'))
+    bcc_mlc = _extract_cadeca_rate(bcc_data.get('MLC'))
+
+    # --- Binance ---
+    binance_data = rates_data.get('binance') or {}
+    if any(k.endswith('USDT') for k in binance_data.keys()):
+        # Raw format: {"BTCUSDT": "45000", "ETHUSDT": "2500"}
+        btc_price = binance_data.get('BTCUSDT')
+        eth_price = binance_data.get('ETHUSDT')
+        binance_btc = float(btc_price) if btc_price else None
+        binance_eth = float(eth_price) if eth_price else None
+    else:
+        # Normalized test format: {"BTC": {"rate": 95000}, "ETH": {"rate": 3500}}
+        binance_btc = binance_data.get('BTC', {}).get('rate')
+        binance_eth = binance_data.get('ETH', {}).get('rate')
+
     snapshot = HistorySnapshot(
         fetched_at=datetime.now(timezone.utc),
-        # ElToque
-        eltoque_usd=rates_data.get('eltoque', {}).get('USD', {}).get('rate'),
-        eltoque_eur=rates_data.get('eltoque', {}).get('EUR', {}).get('rate'),
-        eltoque_mlc=rates_data.get('eltoque', {}).get('MLC', {}).get('rate'),
-        # CADECA (average of buy/sell)
-        cadeca_usd=_average_cadeca_rate(rates_data.get('cadeca', {}).get('USD', {})),
-        cadeca_eur=_average_cadeca_rate(rates_data.get('cadeca', {}).get('EUR', {})),
-        cadeca_mlc=_average_cadeca_rate(rates_data.get('cadeca', {}).get('MLC', {})),
-        # BCC (average of buy/sell)
-        bcc_usd=_average_cadeca_rate(rates_data.get('bcc', {}).get('USD', {})),
-        bcc_eur=_average_cadeca_rate(rates_data.get('bcc', {}).get('EUR', {})),
-        bcc_mlc=_average_cadeca_rate(rates_data.get('bcc', {}).get('MLC', {})),
-        # Binance
-        binance_btc=rates_data.get('binance', {}).get('BTC', {}).get('rate'),
-        binance_eth=rates_data.get('binance', {}).get('ETH', {}).get('rate'),
+        eltoque_usd=eltoque_usd,
+        eltoque_eur=eltoque_eur,
+        eltoque_mlc=eltoque_mlc,
+        cadeca_usd=cadeca_usd,
+        cadeca_eur=cadeca_eur,
+        cadeca_mlc=cadeca_mlc,
+        bcc_usd=bcc_usd,
+        bcc_eur=bcc_eur,
+        bcc_mlc=bcc_mlc,
+        binance_btc=binance_btc,
+        binance_eth=binance_eth,
     )
 
     db.add(snapshot)
@@ -826,22 +867,39 @@ async def save_history_snapshot(db: AsyncSession, rates_data: dict) -> None:
     logger.info(f"📊 History snapshot saved: {snapshot.fetched_at}")
 
 
-def _average_cadeca_rate(rate_data: dict | float) -> float | None:
-    """Calculate average of buy/sell rates for CADECA/BCC.
+def _average_cadeca_rate(rate_data: dict | float | None) -> float | None:
+    """
+    Calculate average of buy/sell rates for CADECA/BCC.
+    Supports both Spanish keys ('compra'/'venta') and English ('buy'/'sell').
     
     Args:
-        rate_data: Can be dict {'buy': float, 'sell': float} or float directly
+        rate_data: For CADECA: dict with buy/sell keys.
+                   For BCC: float directly.
+                   None if no data.
+    
+    Returns:
+        Average rate as float, or None if unavailable.
     """
     if not rate_data:
         return None
     
-    # BCC returns float directly, CADECA returns dict
+    # Already a numeric value (BCC)
     if isinstance(rate_data, (int, float)):
         return float(rate_data)
     
-    # CADECA format: {'buy': float, 'sell': float}
-    buy = rate_data.get('buy')
-    sell = rate_data.get('sell')
-    if buy and sell:
-        return (buy + sell) / 2
-    return buy or sell
+    # Dictionary with buy/sell (Spanish or English keys)
+    buy = rate_data.get('compra', rate_data.get('buy'))
+    sell = rate_data.get('venta', rate_data.get('sell'))
+    
+    # Convert to float if present
+    try:
+        if buy is not None and sell is not None:
+            return (float(buy) + float(sell)) / 2
+        elif buy is not None:
+            return float(buy)
+        elif sell is not None:
+            return float(sell)
+    except (ValueError, TypeError):
+        pass
+    
+    return None
