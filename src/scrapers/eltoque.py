@@ -56,3 +56,6 @@ async def fetch_eltoque(
         return None
     except (KeyError, json.JSONDecodeError):
         return None
+    except Exception as e:
+        print(f"❌ ElToque unexpected error: {e}")
+        return None

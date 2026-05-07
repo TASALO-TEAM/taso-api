@@ -120,6 +120,15 @@ async def fetch_cubanomic(
                 "path": "/api/v1/tasas/cubanomic"
             }
         }
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": {
+                "code": 500,
+                "message": f"Error inesperado: {str(e)}",
+                "path": "/api/v1/tasas/cubanomic"
+            }
+        }
 
 
 def _parse_cubanomic_response(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:

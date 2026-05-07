@@ -77,3 +77,6 @@ async def fetch_binance(
     except (KeyError, ValueError, json.JSONDecodeError) as e:
         print(f"❌ Binance parse error: {e}")
         return None
+    except Exception as e:
+        print(f"❌ Binance unexpected error: {e}")
+        return None
