@@ -18,8 +18,7 @@ dependencies = [
     "apscheduler>=3.10.4",
     "urllib3>=2.6.3",
     "playwright>=1.49.0",
-    "selenium>=4.0.0",
-    "webdriver-manager>=4.0.0",
+    "selenium>=4.21.0",
 ]
 
 [build-system]

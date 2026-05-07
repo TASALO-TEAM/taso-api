@@ -121,7 +121,7 @@ async def _capture_with_selenium(output_path: str, timeout: int) -> Dict:
     if not SELENIUM_AVAILABLE:
         return {
             "success": False,
-            "error": "Selenium not installed. Run: pip install selenium webdriver-manager"
+            "error": "Selenium not installed. Run: pip install selenium"
         }
     
     def _capture_sync():
@@ -133,8 +133,8 @@ async def _capture_with_selenium(output_path: str, timeout: int) -> Dict:
             from selenium.webdriver.support import expected_conditions as EC
             from selenium.webdriver.chrome.options import Options
             from selenium.webdriver.chrome.service import Service
-            from webdriver_manager.chrome import ChromeDriverManager
-            
+            from selenium.common.exceptions import WebDriverException
+
             # Configure headless Chrome
             chrome_options = Options()
             chrome_options.add_argument("--headless=new")
@@ -143,9 +143,11 @@ async def _capture_with_selenium(output_path: str, timeout: int) -> Dict:
             chrome_options.add_argument("--window-size=1920,1080")
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--disable-extensions")
-            
-            # Use webdriver-manager to auto-install/update chromedriver
-            service = Service(ChromeDriverManager().install())
+
+            # Use Selenium Manager (built into Selenium 4.6+) to auto-detect
+            # and download the correct ChromeDriver version for the installed browser.
+            # No need for webdriver-manager dependency.
+            service = Service()  # Selenium Manager auto-resolves driver
             driver = webdriver.Chrome(service=service, options=chrome_options)
             
             try:
