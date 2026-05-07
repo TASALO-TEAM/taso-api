@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError
 
 from src.scrapers.eltoque import fetch_eltoque
 from src.scrapers.binance import fetch_binance
@@ -297,14 +296,10 @@ async def get_latest_rates(
         )
 
         try:
-        try:
             query_result = await session.execute(stmt)
             snapshots = query_result.scalars().all()
         except Exception as e:
             logger.error(f"DB error fetching source {source}: {e}")
-            snapshots = []
-        except SQLAlchemyError as e:
-            logger.error(f"DB error fetching latest for {source}: {e}")
             snapshots = []
 
         # ESTRATEGIA 2: Fallback - si no hay datos en este timestamp, buscar últimos disponibles
@@ -318,16 +313,13 @@ async def get_latest_rates(
                 .order_by(RateSnapshot.fetched_at.desc())
                 .limit(15)
             )
-                try:
+
             try:
                 fallback_result = await session.execute(fallback_stmt)
                 fallback_snapshots = fallback_result.scalars().all()
             except Exception as e:
                 logger.error(f"DB error fetching fallback for {source}: {e}")
                 fallback_snapshots = []
-                except SQLAlchemyError as e:
-                    logger.error(f"DB error fetching fallback for {source}: {e}")
-                    fallback_snapshots = []
 
             if not fallback_snapshots:
                 print(
@@ -585,7 +577,7 @@ async def get_history(
     )
 
     try:
-        result = await db.execute(stmt)
+        result = await session.execute(stmt)
         return list(result.scalars().all())
     except Exception as e:
         logger.error(f"DB error fetching history for {source}/{currency}: {e}")
