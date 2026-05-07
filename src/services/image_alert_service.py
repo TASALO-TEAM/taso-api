@@ -1,11 +1,15 @@
 """Image alert service for managing user alert preferences."""
 
+import logging
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.models.image_alert import UserImageAlert
+
+logger = logging.getLogger(__name__)
 
 
 async def get_user_alert(
@@ -23,8 +27,12 @@ async def get_user_alert(
         UserImageAlert or None
     """
     stmt = select(UserImageAlert).where(UserImageAlert.user_id == user_id)
-    result = await db.execute(stmt)
-    return result.scalars().first()
+    try:
+        result = await db.execute(stmt)
+        return result.scalars().first()
+    except Exception as e:
+        logger.error(f"DB error in get_user_alert for user_id={user_id}: {e}")
+        return None
 
 
 async def create_update_alert(
@@ -33,7 +41,7 @@ async def create_update_alert(
     alert_time: str = "07:15",
     format_type: str = "photo",
     enabled: bool = True
-) -> UserImageAlert:
+) -> Optional[UserImageAlert]:
     """
     Crea o actualiza alerta de usuario.
     
@@ -45,7 +53,7 @@ async def create_update_alert(
         enabled: Whether alert is active
     
     Returns:
-        UserImageAlert
+        UserImageAlert or None on error
     """
     stmt = insert(UserImageAlert).values(
         user_id=user_id,
@@ -61,9 +69,14 @@ async def create_update_alert(
         )
     ).returning(UserImageAlert)
     
-    result = await db.execute(stmt)
-    await db.commit()
-    return result.scalars().first()
+    try:
+        result = await db.execute(stmt)
+        await db.commit()
+        return result.scalars().first()
+    except Exception as e:
+        logger.error(f"DB error in create_update_alert for user_id={user_id}: {e}")
+        await db.rollback()
+        return None
 
 
 async def delete_alert(
@@ -78,15 +91,20 @@ async def delete_alert(
         user_id: Telegram user_id
     
     Returns:
-        True if deleted, False if not found
+        True if deleted, False if not found or error
     """
-    alert = await get_user_alert(db, user_id)
-    if not alert:
+    try:
+        alert = await get_user_alert(db, user_id)
+        if not alert:
+            return False
+        
+        await db.delete(alert)
+        await db.commit()
+        return True
+    except Exception as e:
+        logger.error(f"DB error in delete_alert for user_id={user_id}: {e}")
+        await db.rollback()
         return False
-    
-    await db.delete(alert)
-    await db.commit()
-    return True
 
 
 async def get_all_enabled_alerts(
@@ -102,8 +120,12 @@ async def get_all_enabled_alerts(
         List of UserImageAlert
     """
     stmt = select(UserImageAlert).where(UserImageAlert.enabled == True)
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
+    try:
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
+    except Exception as e:
+        logger.error(f"DB error in get_all_enabled_alerts: {e}")
+        return []
 
 
 async def disable_alert(
@@ -120,11 +142,16 @@ async def disable_alert(
     Returns:
         Updated UserImageAlert or None
     """
-    alert = await get_user_alert(db, user_id)
-    if not alert:
+    try:
+        alert = await get_user_alert(db, user_id)
+        if not alert:
+            return None
+        
+        alert.enabled = False
+        await db.commit()
+        await db.refresh(alert)
+        return alert
+    except Exception as e:
+        logger.error(f"DB error in disable_alert for user_id={user_id}: {e}")
+        await db.rollback()
         return None
-    
-    alert.enabled = False
-    await db.commit()
-    await db.refresh(alert)
-    return alert

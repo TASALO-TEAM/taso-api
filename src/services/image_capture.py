@@ -1,14 +1,18 @@
 """Image capture service for managing screenshot operations."""
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Dict, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, cast, Date
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.models.image_snapshot import ImageSnapshot
 from src.scrapers.images import capture_eltoque_image, ensure_directory_exists
+
+logger = logging.getLogger(__name__)
 
 
 # Configuration
@@ -104,8 +108,12 @@ async def get_latest_image(
         .limit(1)
     )
     
-    result = await db.execute(stmt)
-    return result.scalars().first()
+    try:
+        result = await db.execute(stmt)
+        return result.scalars().first()
+    except Exception as e:
+        logger.error(f"DB error in get_latest_image for {source}: {e}")
+        return None
 
 
 async def get_today_image(
@@ -133,8 +141,12 @@ async def get_today_image(
         .limit(1)
     )
     
-    result = await db.execute(stmt)
-    return result.scalars().first()
+    try:
+        result = await db.execute(stmt)
+        return result.scalars().first()
+    except Exception as e:
+        logger.error(f"DB error in get_today_image for {source}: {e}")
+        return None
 
 
 async def get_image_by_date(
@@ -165,5 +177,9 @@ async def get_image_by_date(
         .limit(1)
     )
     
-    result = await db.execute(stmt)
-    return result.scalars().first()
+    try:
+        result = await db.execute(stmt)
+        return result.scalars().first()
+    except Exception as e:
+        logger.error(f"DB error in get_image_by_date for {source} date={date}: {e}")
+        return None

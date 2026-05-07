@@ -178,6 +178,17 @@ async def create_update_alert_endpoint(
             enabled=alert_data.enabled
         )
 
+        if alert is None:
+            logger.error(f"Failed to create/update alert for user_id={alert_data.user_id}")
+            return APIResponse(
+                ok=False,
+                error={
+                    "code": 500,
+                    "message": "Error al guardar la alerta. La base de datos puede estar temporalmente no disponible.",
+                    "path": "/api/v1/images/alerts"
+                }
+            )
+        
         logger.info(f"Alert created successfully: {alert}")
 
         return APIResponse(
@@ -186,8 +197,15 @@ async def create_update_alert_endpoint(
             count=1
         )
     except Exception as e:
-        logger.error(f"Error creating alert: {e}", exc_info=True)
-        raise
+        logger.error(f"Unexpected error in create_update_alert_endpoint: {e}", exc_info=True)
+        return APIResponse(
+            ok=False,
+            error={
+                "code": 500,
+                "message": "Error interno del servidor",
+                "path": "/api/v1/images/alerts"
+            }
+        )
 
 
 @router.delete("/alerts/{user_id}", response_model=APIResponse)
