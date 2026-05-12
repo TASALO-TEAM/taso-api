@@ -25,16 +25,32 @@ def _parse_ssl_params(url: make_url) -> tuple[dict, make_url]:
 
     asyncpg no acepta 'sslmode' como kwarg; usa 'ssl' (bool o SSLContext).
     Esta función traduce sslmode=require → ssl=True, etc.
+
+    Supabase-specific: sslmode=require with ?sslaccept=accept_all creates unverified context.
     """
+    import ssl
+
     query = dict(url.query)
     connect_args = {}
 
     if 'sslmode' in query:
         sslmode = query['sslmode']
+
+        # Check for Supabase-specific sslaccept parameter
+        sslaccept = query.get('sslaccept', 'accept_all')
+
         if sslmode == 'require':
-            connect_args['ssl'] = True
+            if sslaccept == 'accept_all':
+                # Supabase mode: create unverified SSL context for self-signed certs
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                connect_args['ssl'] = ctx
+            else:
+                # Standard PostgreSQL: verify certificates (default secure)
+                connect_args['ssl'] = True
         elif sslmode in ('verify-ca', 'verify-full'):
-            # Para verify-ca/verify-full necesitamos un SSLContext
+            # For verify-ca/verify-full necesitamos un SSLContext con CA cargada
             ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
             if 'sslrootcert' in query:
                 ctx.load_verify_locations(cafile=query['sslrootcert'])
@@ -43,8 +59,9 @@ def _parse_ssl_params(url: make_url) -> tuple[dict, make_url]:
             connect_args['ssl'] = ctx
         elif sslmode == 'disable':
             connect_args['ssl'] = False
-        # Eliminar sslmode de la URL para que no se pase doble (ya via connect_args)
-        url = url.difference_update_query(['sslmode'])
+
+        # Eliminar sslmode y sslaccept de la URL para que no se pasen dobles
+        url = url.difference_update_query(['sslmode', 'sslaccept'])
 
     return connect_args, url
 
