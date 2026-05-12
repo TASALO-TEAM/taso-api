@@ -1,7 +1,9 @@
 """Database configuration and session management."""
 
+import ssl
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, declared_attr
+from sqlalchemy.engine import make_url
 
 
 class Base(DeclarativeBase):
@@ -18,23 +20,57 @@ _engine = None
 async_session_factory = None
 
 
+def _parse_ssl_params(url: make_url) -> tuple[dict, make_url]:
+    """Extrae parámetros SSL de la URL y los traduce a connect_args para asyncpg.
+
+    asyncpg no acepta 'sslmode' como kwarg; usa 'ssl' (bool o SSLContext).
+    Esta función traduce sslmode=require → ssl=True, etc.
+    """
+    query = dict(url.query)
+    connect_args = {}
+
+    if 'sslmode' in query:
+        sslmode = query['sslmode']
+        if sslmode == 'require':
+            connect_args['ssl'] = True
+        elif sslmode in ('verify-ca', 'verify-full'):
+            # Para verify-ca/verify-full necesitamos un SSLContext
+            ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+            if 'sslrootcert' in query:
+                ctx.load_verify_locations(cafile=query['sslrootcert'])
+            ctx.check_hostname = (sslmode == 'verify-full')
+            ctx.verify_mode = ssl.CERT_REQUIRED
+            connect_args['ssl'] = ctx
+        elif sslmode == 'disable':
+            connect_args['ssl'] = False
+        # Eliminar sslmode de la URL para que no se pase doble (ya via connect_args)
+        url = url.difference_update_query(['sslmode'])
+
+    return connect_args, url
+
+
 def get_engine(database_url: str, echo: bool = False):
     """Crear engine de SQLAlchemy según el tipo de base de datos."""
     global _engine, async_session_factory
 
-    if database_url.startswith("sqlite"):
-        # SQLite necesita connect_args para async
+    url = make_url(database_url)
+    connect_args = {}
+
+    if url.drivername.startswith("sqlite"):
+        connect_args = {"check_same_thread": False}
         _engine = create_async_engine(
-            database_url,
+            str(url),
             echo=echo,
-            connect_args={"check_same_thread": False},
+            connect_args=connect_args,
         )
     else:
-        # PostgreSQL
+        # PostgreSQL/asyncpg — manejar SSL si está presente en la URL
+        connect_args, url = _parse_ssl_params(url)
         _engine = create_async_engine(
-            database_url,
+            str(url),
             echo=echo,
-            pool_pre_ping=True,  # Verificar conexiones antes de usar
+            pool_pre_ping=True,
+            connect_args=connect_args,
         )
 
     async_session_factory = async_sessionmaker(
