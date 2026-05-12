@@ -27,17 +27,24 @@ def _parse_ssl_params(url: make_url) -> tuple[dict, make_url]:
     Esta función traduce sslmode=require → ssl=True, etc.
 
     Supabase-specific: sslmode=require with ?sslaccept=accept_all creates unverified context.
+    IMPORTANTE: sslmode y sslaccept se eliminan de la URL resultante para no pasarlos a SQLAlchemy.
     """
     import ssl
 
     query = dict(url.query)
     connect_args = {}
 
+    # Parámetros SSL a eliminar de la URL final
+    ssl_params_to_remove = []
+
     if 'sslmode' in query:
         sslmode = query['sslmode']
+        ssl_params_to_remove.append('sslmode')
 
         # Check for Supabase-specific sslaccept parameter
         sslaccept = query.get('sslaccept', 'accept_all')
+        if sslaccept:
+            ssl_params_to_remove.append('sslaccept')
 
         if sslmode == 'require':
             if sslaccept == 'accept_all':
@@ -60,8 +67,9 @@ def _parse_ssl_params(url: make_url) -> tuple[dict, make_url]:
         elif sslmode == 'disable':
             connect_args['ssl'] = False
 
-        # Eliminar sslmode y sslaccept de la URL para que no se pasen dobles
-        url = url.difference_update_query(['sslmode', 'sslaccept'])
+    # Rebuild query string without ssl params
+    new_query = {k: v for k, v in query.items() if k not in ssl_params_to_remove}
+    url = url.set_query(new_query)
 
     return connect_args, url
 
