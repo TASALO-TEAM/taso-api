@@ -90,8 +90,9 @@ def get_engine(database_url: str, echo: bool = False):
     else:
         # PostgreSQL/asyncpg — manejar SSL si está presente en la URL
         connect_args, url = _parse_ssl_params(url)
+        connect_args.setdefault("statement_cache_size", 0)
         _engine = create_async_engine(
-            str(url),
+            url.render_as_string(hide_password=False),
             echo=echo,
             pool_pre_ping=True,
             connect_args=connect_args,

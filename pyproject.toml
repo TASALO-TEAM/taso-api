@@ -19,6 +19,7 @@ dependencies = [
     "urllib3>=2.6.3",
     "playwright>=1.49.0",
     "selenium>=4.21.0",
+    "redis>=7.4.0",
 ]
 
 [build-system]
