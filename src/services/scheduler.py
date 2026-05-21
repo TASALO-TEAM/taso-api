@@ -1,6 +1,7 @@
 """APScheduler configuration and jobs."""
 
 import logging
+import asyncio
 from datetime import datetime, timezone
 from typing import Callable, Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -37,7 +38,6 @@ def create_scheduler(db_factory: Callable) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
 
     # Agregar job de refresh (con db_factory bound)
-    # Usar functools.partial para pasar argumentos correctamente
     from functools import partial
     scheduler.add_job(
         partial(refresh_all, db_factory),
@@ -46,9 +46,6 @@ def create_scheduler(db_factory: Callable) -> AsyncIOScheduler:
         name='Refresh all rates',
         replace_existing=True
     )
-
-    # Agregar job de Cubanomic (se inicializa aparte)
-    # init_cubanomic_scheduler() se llama después de crear el scheduler
 
     return scheduler
 
@@ -63,13 +60,11 @@ async def init_scheduler_status(db_factory: Callable) -> None:
     """
     async with db_factory() as session:
         try:
-            # Verificar si ya existe un registro
             stmt = select(SchedulerStatus).order_by(SchedulerStatus.id.desc()).limit(1)
             result = await session.execute(stmt)
             status = result.scalars().first()
 
             if not status:
-                # Crear registro inicial
                 status = SchedulerStatus(
                     last_run_at=None,
                     last_success_at=None,
@@ -88,19 +83,9 @@ async def init_cubanomic_scheduler(
     scheduler: AsyncIOScheduler,
     db_factory: Callable[[], AsyncSession]
 ) -> None:
-    """
-    Initialize Cubanomic daily fetch job.
-
-    Args:
-        scheduler: AsyncIOScheduler instance
-        db_factory: Factory function that creates DB sessions
-
-    Job:
-    - fetch_cubanomic_job: Runs daily at 00:01 UTC
-    """
+    """Initialize Cubanomic daily fetch job at 00:01 UTC."""
 
     async def fetch_cubanomic_job() -> None:
-        """Fetch Cubanomic data daily at 00:01 UTC."""
         db = db_factory()
         try:
             async with db:
@@ -112,7 +97,6 @@ async def init_cubanomic_scheduler(
         except Exception as e:
             logger.error(f"❌ Cubanomic fetch failed: {e}")
 
-    # Run daily at 00:01 UTC
     scheduler.add_job(
         fetch_cubanomic_job,
         trigger="cron",
@@ -130,19 +114,9 @@ async def init_image_capture_scheduler(
     scheduler: AsyncIOScheduler,
     db_factory: Callable[[], AsyncSession]
 ) -> None:
-    """
-    Initialize ElToque image capture job.
-
-    Args:
-        scheduler: AsyncIOScheduler instance
-        db_factory: Factory function that creates DB sessions
-
-    Job:
-    - capture_eltoque_image: Runs daily at 06:00 UTC (morning in Cuba)
-    """
+    """Initialize ElToque image capture job at 06:00 UTC."""
 
     async def capture_eltoque_image_job() -> None:
-        """Capture ElToque image daily at 06:00 UTC."""
         db = db_factory()
         try:
             async with db:
@@ -154,7 +128,6 @@ async def init_image_capture_scheduler(
         except Exception as e:
             logger.error(f"❌ ElToque image capture failed: {e}")
 
-    # Run daily at 06:00 UTC (morning in Cuba, good time for rates)
     scheduler.add_job(
         capture_eltoque_image_job,
         trigger="cron",
@@ -168,35 +141,107 @@ async def init_image_capture_scheduler(
     print("✅ [Scheduler] ElToque image capture job added (06:00 UTC)")
 
 
+async def init_year_scheduler(
+    scheduler: AsyncIOScheduler,
+    db_factory: Callable[[], AsyncSession]
+) -> None:
+    """Year daily alert + new year greeting job."""
+    from src.services import year_service
+
+    async def year_daily_job() -> None:
+        db = db_factory()
+        try:
+            async with db:
+                subs = await year_service.get_enabled_subscriptions(db)
+                if not subs:
+                    return
+                now = datetime.now(timezone.utc)
+                progress = await year_service.get_year_progress()
+                bar = year_service.generate_progress_bar(progress.percent, length=20)
+                status_mood = (
+                    "🍀 Recién estamos empezando..." if progress.percent < 2
+                    else "🌱 Arrancando motores..." if progress.percent < 10
+                    else "🏃‍♂️ Aún hay tiempo de cumplir propósitos." if progress.percent < 50
+                    else "🔥 ¡Se nos va el año!" if progress.percent < 80
+                    else "🏁 Recta final, ¡agárrate!"
+                )
+                daily = await year_service.get_daily_quote(db)
+
+                for sub in subs:
+                    if sub.hour != now.hour:
+                        continue
+                    user_id = sub.user_id
+                    msg = (
+                        f"🗓 *ESTADO DEL AÑO {progress.year}*\n"
+                        f"•••\n"
+                        f"📆 *Fecha:* {progress.date_str}\n"
+                        f"⏳ *Progreso:* `{progress.percent:.2f}%`\n"
+                        f"📊 `{bar}`\n\n"
+                        f"🔚 Faltan *{progress.days_left} días* para {progress.year + 1}.\n"
+                        f"💭 _{status_mood}_\n"
+                        f"•••\n"
+                        f"💡 *Frase Del Día:*\n"
+                        f'"{daily.quote}"'
+                    )
+                    logger.info("📨 Year alert due for user %s (UTC hour %s)", user_id, now.hour)
+        except Exception:
+            logger.exception("❌ Year daily job failed")
+
+    # Run every minute — checks subscriptions and dispatches only at matching UTC hour
+    scheduler.add_job(
+        year_daily_job,
+        trigger="cron",
+        minute="*",
+        timezone="UTC",
+        id="year_daily_alert",
+        name="Year daily progress alert",
+        replace_existing=True,
+    )
+    print("✅ [Scheduler] Year daily alert job added (checks every minute)")
+
+    async def year_new_year_job() -> None:
+        """Daily at midnight UTC: check Jan 1, add greeting if missing, set extra flag."""
+        db = db_factory()
+        try:
+            async with db:
+                now = datetime.now(timezone.utc)
+                year = now.year
+                # Check if January 1 && no greeting yet
+                if await year_service.is_new_year(db, year):
+                    await year_service.add_new_year_greeting(db, year)
+                    logger.info("🎉 New year %s greeting added by cron", year)
+                # Ensure extra flag record exists for current year
+                await year_service.get_or_create_extra_flag(db, year)
+        except Exception:
+            logger.exception("❌ Year new-year greeting job failed")
+
+    scheduler.add_job(
+        year_new_year_job,
+        trigger="cron",
+        hour=0,
+        minute=0,
+        timezone="UTC",
+        id="year_new_year_greeting",
+        name="Year new year greeting (Jan 1 auto-quote)",
+        replace_existing=True,
+    )
+    print("✅ [Scheduler] Year new-year greeting job added (00:00 UTC daily)")
+
+
 async def refresh_all(db_factory: Callable) -> None:
-    """
-    Job que se ejecuta periódicamente:
-    1. Ejecuta los 4 scrapers en paralelo
-    2. Persiste snapshots en PostgreSQL
-    3. Guarda history snapshot para local history endpoint
-    4. Actualiza scheduler_status
-
-    Legacy pattern: bucle principal de legacy/tasa.py
-
-    Args:
-        db_factory: Factory function que crea sesiones de DB
-    """
+    """Job que se ejecuta periódicamente: scrapers → persistencia → history → scheduler_status."""
     print(f"🔄 [Scheduler] Iniciando refresh_all")
 
     async with db_factory() as session:
         try:
-            # 1. Fetch all sources
             results = await fetch_all_sources()
 
-            # 2. Save snapshots
             for source, data in results.items():
                 if data:
                     await save_snapshot(session, source, data)
 
-            # NEW: Save to history snapshots
             await save_history_snapshot(session, results)
 
-            # 3. Actualizar scheduler_status con éxito
             await _update_scheduler_status(
                 session,
                 success=True,
@@ -212,7 +257,6 @@ async def refresh_all(db_factory: Callable) -> None:
             print(f"❌ [Scheduler] Error en refresh_all: {e}")
             await session.rollback()
 
-            # Actualizar scheduler_status con error
             async with db_factory() as error_session:
                 await _update_scheduler_status(
                     error_session,
@@ -232,23 +276,12 @@ async def _update_scheduler_status(
     last_success_at: datetime | None = None,
     error: str | None = None
 ) -> None:
-    """
-    Actualiza o crea el registro de scheduler_status.
-
-    Args:
-        session: SQLAlchemy async session
-        success: Si la ejecución fue exitosa
-        last_run_at: Timestamp de la ejecución
-        last_success_at: Timestamp del último éxito (None si falló)
-        error: Mensaje de error si ocurrió
-    """
-    # Obtener registro existente
+    """Actualiza o crea el registro de scheduler_status."""
     stmt = select(SchedulerStatus).order_by(SchedulerStatus.id.desc()).limit(1)
     result = await session.execute(stmt)
     status = result.scalars().first()
 
     if status:
-        # Actualizar existente
         status.last_run_at = last_run_at
         if success:
             status.last_success_at = last_success_at
@@ -258,7 +291,6 @@ async def _update_scheduler_status(
             status.error_count += 1
             status.last_error = error
     else:
-        # Crear nuevo registro
         status = SchedulerStatus(
             last_run_at=last_run_at,
             last_success_at=last_success_at,
