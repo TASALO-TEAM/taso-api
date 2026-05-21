@@ -87,8 +87,10 @@ async def lifespan(app: FastAPI):
         async with app.state.db() as _seed_db:
             _seed_result = await year_service.seed_quotes_if_empty(_seed_db)
             logger.info("🌱 Year quotes seed: %s", _seed_result)
+            _migrate_result = await year_service.migrate_legacy_subs(_seed_db)
+            logger.info("📋 Legacy subs migrated: %s", _migrate_result)
     except Exception as _e:
-        logger.warning("⚠️ Year quotes seed failed (non-fatal): %s", _e)
+        logger.warning("⚠️ Year DB init failed (non-fatal): %s", _e)
 
     scheduler.start()
     logger.info(f"⏰ [Startup] Scheduler iniciado (intervalo: {settings.refresh_interval_minutes} min)")

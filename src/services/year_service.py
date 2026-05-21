@@ -76,7 +76,6 @@ async def seed_quotes_if_empty(db: AsyncSession) -> dict:
     existing_count = await db.scalar(select(sql_func.count(YearQuote.id)))
     if existing_count and existing_count > 0:
         return {"seeded": False, "total": existing_count}
-
     quotes = _load_quotes_json()
     if not quotes:
         logger.warning("No quotes found in JSON to seed")
@@ -308,3 +307,57 @@ async def set_extra_flag_asked(db: AsyncSession, year: int, asked: bool = True) 
     await db.commit()
     await db.refresh(flag)
     return flag
+
+
+# ---------------------------------------------------------------------------
+# Extended daily quote (full context — for add-quote confirmation flow)
+# ---------------------------------------------------------------------------
+
+
+async def get_extended_daily_quote(db: AsyncSession) -> dict:
+    """Return full year state + daily quote as a flat dict (for /y add confirmation)."""
+    progress = get_year_progress()
+    daily = await get_daily_quote(db)
+    stats = await get_quote_stats(db)
+    return {
+        "ok": True,
+        "progress": progress.model_dump(),
+        "quote": daily.model_dump(),
+        "stats": stats.model_dump(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Legacy migration
+# ---------------------------------------------------------------------------
+
+
+async def migrate_legacy_subs(db: AsyncSession) -> dict:
+    """Import subscriptions from the legacy JSON file if DB table is empty."""
+    existing = (await db.execute(select(sql_func.count(YearSubscription.id)))).scalar() or 0
+    if existing > 0:
+        return {"migrated": False, "total": existing}
+
+    legacy_path = os.path.normpath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "year", "year", "year_subs.json")
+    )
+    if not os.path.exists(legacy_path):
+        logger.warning("Legacy subs JSON not found at %s", legacy_path)
+        return {"migrated": False, "total": 0}
+
+    with open(legacy_path, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+
+    migrated = 0
+    for uid_str, data in raw.items():
+        try:
+            uid = int(uid_str)
+            hour = data.get("hour", 6)
+            db.add(YearSubscription(user_id=uid, hour=hour))
+            migrated += 1
+        except (ValueError, TypeError):
+            logger.warning("Invalid sub entry: %s = %s", uid_str, data)
+
+    await db.commit()
+    logger.info("Migrated %d legacy year subscriptions from JSON", migrated)
+    return {"migrated": True, "total": migrated}
