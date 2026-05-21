@@ -18,7 +18,8 @@ from src.routers import rates as rates_router
 from src.routers import admin as admin_router
 from src.routers import stats as stats_router
 from src.routers import images as images_router
-from src.services.scheduler import create_scheduler, init_scheduler_status, init_cubanomic_scheduler, init_image_capture_scheduler
+from src.services.scheduler import create_scheduler, init_scheduler_status, init_cubanomic_scheduler, init_image_capture_scheduler, init_year_scheduler
+from src.routers import year as year_router
 
 settings = get_settings()
 
@@ -70,7 +71,25 @@ async def lifespan(app: FastAPI):
     
     # Inicializar job de captura de imagen de ElToque
     await init_image_capture_scheduler(scheduler, database.async_session_factory)
-    
+
+    # Year daily alert scheduler
+    try:
+        await init_year_scheduler(scheduler, database.async_session_factory)
+        logger.info("✅ [Startup] Year daily alert scheduler initialized")
+    except ImportError:
+        logger.warning("⚠️ Year scheduler not yet available — taso-api changes pending")
+    except Exception as e:
+        logger.warning("⚠️ Year scheduler init failed: %s", e)
+
+    # Seed year quotes from JSON if table is empty
+    from src.services import year_service
+    try:
+        async with app.state.db() as _seed_db:
+            _seed_result = await year_service.seed_quotes_if_empty(_seed_db)
+            logger.info("🌱 Year quotes seed: %s", _seed_result)
+    except Exception as _e:
+        logger.warning("⚠️ Year quotes seed failed (non-fatal): %s", _e)
+
     scheduler.start()
     logger.info(f"⏰ [Startup] Scheduler iniciado (intervalo: {settings.refresh_interval_minutes} min)")
 
@@ -108,6 +127,8 @@ app.include_router(rates_router.router, prefix="/api/v1/tasas", tags=["Tasas"])
 app.include_router(admin_router.router, prefix="/api/v1/admin", tags=["Admin"])
 app.include_router(stats_router.router, prefix="/api/v1/admin/stats", tags=["Admin Stats"])
 app.include_router(images_router.router, tags=["Images"])
+app.include_router(year_router.router, prefix="/api/v1/year", tags=["Year"])
+app.include_router(year_router.admin_router, prefix="/api/v1/year", tags=["Year Admin"])
 
 
 @app.get("/api/v1/health", tags=["Health"])
