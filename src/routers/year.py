@@ -21,6 +21,8 @@ from src.schemas.year import (
     SubscriptionResponse,
     SubscriptionListResponse,
     AddQuoteResponse,
+    EditQuoteRequest,
+    EditQuoteResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -126,6 +128,29 @@ async def admin_set_extra_flag(year: int, asked: bool = True, db: AsyncSession =
 # ── Quotes admin (write) ──────────────────────────────────────────────────
 
 
+@admin_router.get("/quotes/{quote_id}")
+async def admin_get_quote(quote_id: int, db: AsyncSession = Depends(get_db)):
+    """Get a single quote by its sequential position id (quote_id=1 is Feliz año)."""
+    if quote_id == 1:
+        return {
+            "ok": True,
+            "id": 1,
+            "quote_text": "🎉 Feliz año {year}!".replace("{year}", str(datetime.now().year)),
+            "created_at": None,
+            "is_greeting": True,
+        }
+    row = await year_service.get_quote_by_id(db, quote_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Quote not found")
+    return {
+        "ok": True,
+        "id": row.id,
+        "quote_text": row.quote_text,
+        "created_at": row.created_at,
+        "is_greeting": False,
+    }
+
+
 @admin_router.post("/quotes", response_model=AddQuoteResponse)
 async def admin_add_quote(body: QuoteCreate, db: AsyncSession = Depends(get_db)):
     row, is_dup = await year_service.add_quote(db, body.quote_text, target_year=body.target_year)
@@ -133,7 +158,7 @@ async def admin_add_quote(body: QuoteCreate, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=409, detail="Quote already exists")
     stats = await year_service.get_quote_stats(db)
     now = datetime.now()
-    ctx = year_service._get_quote_context(stats.current_index, now.year)
+    ctx = year_service._get_quote_seq(stats.current_index)
     return AddQuoteResponse(
         ok=True,
         success=True,
@@ -143,10 +168,22 @@ async def admin_add_quote(body: QuoteCreate, db: AsyncSession = Depends(get_db))
     )
 
 
+@admin_router.put("/quotes/{quote_id}", response_model=EditQuoteResponse)
+async def admin_edit_quote(quote_id: int, body: EditQuoteRequest, db: AsyncSession = Depends(get_db)):
+    row = await year_service.edit_quote(db, quote_id, body.quote_text)
+    if not row:
+        if quote_id == 1:
+            raise HTTPException(status_code=403, detail="Day 1 (Feliz año) is locked and cannot be edited")
+        raise HTTPException(status_code=404, detail="Quote not found or text already exists")
+    return EditQuoteResponse(ok=True, id=row.id, quote_text=row.quote_text, created_at=row.created_at)
+
+
 @admin_router.delete("/quotes/{quote_id}")
 async def admin_delete_quote(quote_id: int, db: AsyncSession = Depends(get_db)):
     ok = await year_service.delete_quote(db, quote_id)
     if not ok:
+        if quote_id == 1:
+            raise HTTPException(status_code=403, detail="Day 1 (Feliz año) is locked and cannot be deleted")
         raise HTTPException(status_code=404, detail="Quote not found")
-    return {"ok": True, "deleted_id": quote_id}
+    return {"ok": True, "deleted_id": quote_id, "reindexed": True}
 
