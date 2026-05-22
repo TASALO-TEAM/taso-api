@@ -1,19 +1,24 @@
 """Year service: business logic for daily quotes, year progress, subscriptions.
 
-Re-implements the core logic from the standalone year_manager.py
-but operates on the database instead of flat JSON files.
-Also includes a seed routine to load the initial quotes into DB.
+Redesigned with positional semantics:
+  - quote.id   → position in ordered list (1-indexed, stable after reindex)
+  - position 1 → "🎉 Feliz año {year}!" (always generated at query time, never stored)
+  - positions 2+ → user quotes (stored in DB, managed by id)
+
+Delete → reindex: if a slot is freed all following slots shift up by 1,
+quotes keep their order but may now occupy a different calendar day.
 """
 
 import json
 import logging
 import math
 import os
+import random
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Sequence
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sql_func
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.year_quote import YearQuote
 from src.models.year_subscription import YearSubscription
@@ -22,18 +27,23 @@ from src.schemas.year import (
     QuoteContext, QuoteResponse, QuoteStats, YearProgressData,
     DailyQuoteResponse, QuoteListResponse, QuoteStatsResponse,
     YearStateResponse, SubscriptionResponse, SubscriptionListResponse,
+    AddQuoteResponse, EditQuoteRequest, EditQuoteResponse,
 )
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Seeding
+# Paths
 # ---------------------------------------------------------------------------
 
 QUOTES_JSON_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "..", "..", "year", "year", "year_quotes.json"
+    "..", "..", "..", "year", "year_quotes.json"
 )
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _load_quotes_json(path: str = QUOTES_JSON_PATH) -> list[str]:
@@ -55,20 +65,109 @@ def _is_leap_year(year: int) -> bool:
 
 
 def _year_limit(year: int) -> int:
+    """Returns 365 or 366 depending on year type."""
     return 366 if _is_leap_year(year) else 365
 
 
-def _get_quote_context(index: int, current_year: int) -> QuoteContext:
-    limit = _year_limit(current_year)
-    if index < limit:
-        return QuoteContext(current=index + 1, limit=limit, year=current_year, is_extra=False)
-    next_year = current_year + 1
+# ---------------------------------------------------------------------------
+# Core: ordered quote list
+# ---------------------------------------------------------------------------
+
+
+async def _list_quotes_ordered(db: AsyncSession) -> list[YearQuote]:
+    """Return all quotes ordered by their id ASC."""
+    result = await db.execute(select(YearQuote).order_by(YearQuote.id))
+    return list(result.scalars().all())
+
+
+async def _get_quote_by_seq(db: AsyncSession, seq: int) -> Optional[YearQuote]:
+    """Return quote at 0-indexed position *seq* in the ordered list, or None.
+
+    Raises ValueError if seq < 0.
+    """
+    if seq < 0:
+        raise ValueError("seq must be >= 0")
+    quotes = await _list_quotes_ordered(db)
+    if seq >= len(quotes):
+        return None
+    return quotes[seq]
+
+
+async def reindex_quotes(db: AsyncSession) -> int:
+    """Reassign sequential ids to all quotes starting from 2 (1 = Feliz año slot).
+
+    Returns number of rows updated.
+    """
+    quotes = await _list_quotes_ordered(db)
+    count = 0
+    for idx, quote in enumerate(quotes):
+        new_id = idx + 2  # id=1 is Feliz año (never stored in DB)
+        if quote.id != new_id:
+            # Save current text; update id; commit
+            old_text = quote.quote_text
+            # SQLAlchemy can't update PK in DB in-place reliably;
+            # delete + re-insert is the safe way.
+            await db.delete(quote)
+            db.add(YearQuote(id=new_id, quote_text=old_text))
+            count += 1
+    await db.commit()
+    logger.info("Reindexed %d quotes (now ids start at 2)", count)
+    return count
+
+
+# ---------------------------------------------------------------------------
+# Context helpers
+# ---------------------------------------------------------------------------
+
+
+def _get_quote_seq(index: int) -> QuoteContext:
+    """Given a 0-based *index* into the user-quote list, return contextual info.
+
+    Position 1 (id=1) = Feliz año — never in DB, handled in _get_quote_context.
+    index=0 maps to slot position=2 (day 2), index=365 → position=366.
+    """
+    now = datetime.now()
+    # index == 0 → second slot = day 2; index == 365 → day 366
+    position_in_list = index + 1   # 1-based in user-quote list (starts at slot 2)
+    day_of_year = position_in_list + 1  # +1 because slot 1 = day 1 = Feliz año
+    limit = _year_limit(now.year)
+
+    if day_of_year <= limit:
+        # Still in current year
+        return QuoteContext(
+            current=day_of_year,
+            limit=limit,
+            year=now.year,
+            is_extra=False,
+        )
+
+    # Overtaken the current year → extra quotes = year N+1
+    over = day_of_year - limit  # e.g. position 366 in limit=365 → over=1 = day 2 of next year
+    next_year = now.year + 1
+    extra_limit = _year_limit(next_year)
+    # day_of_year within next year context:
+    effective_day = over + 1  # day in next-year numbering (starts at 2 since day1=greeting)
     return QuoteContext(
-        current=index - limit + 1,
-        limit=_year_limit(next_year),
+        current=effective_day,
+        limit=extra_limit,
         year=next_year,
         is_extra=True,
     )
+
+
+def _get_quote_context_from_seq(index: int) -> QuoteContext:
+    """Public-facing wrapper for _get_quote_seq (for use in routers)."""
+    return _get_quote_seq(index)
+
+
+def _get_quote_context(index: int, current_year: int) -> QuoteContext:
+    """Deprecated – use _get_quote_seq instead. Kept for backward compat."""
+    return _get_quote_seq(index)
+
+
+# ---------------------------------------------------------------------------
+# Seeding
+# ---------------------------------------------------------------------------
 
 
 async def seed_quotes_if_empty(db: AsyncSession) -> dict:
@@ -81,100 +180,220 @@ async def seed_quotes_if_empty(db: AsyncSession) -> dict:
         logger.warning("No quotes found in JSON to seed")
         return {"seeded": False, "total": 0}
 
-    for text in quotes:
-        db.add(YearQuote(quote_text=text))
+    for idx, text in enumerate(quotes):
+        db.add(YearQuote(id=idx + 2, quote_text=text))
     await db.commit()
 
     total = await db.scalar(select(sql_func.count(YearQuote.id)))
-    logger.info("Seeded %d year quotes into DB", total)
+    logger.info("Seeded %d year quotes into DB (ids start at 2)", total)
     return {"seeded": True, "total": total}
 
 
 # ---------------------------------------------------------------------------
-# Quote CRUD
+# Quote stats
 # ---------------------------------------------------------------------------
+
 
 async def get_quote_stats(db: AsyncSession) -> QuoteStats:
     total = await db.scalar(select(sql_func.count(YearQuote.id))) or 0
     now = datetime.now()
     today = now.timetuple().tm_yday
     limit = _year_limit(now.year)
-    current_index = (today - 1) % max(total, 1) if total > 0 else 0
+    # index into user-quote list (0-based): day 1 = Feliz año (not in list)
+    user_idx = max(0, today - 2)
+    # Wrap around only if we have actual quotes
+    count = total
+    current_index = user_idx % max(count, 1) if count > 0 else 0
+    has_reached_limit = total >= limit
+    next_year_count = max(0, total - limit)
     return QuoteStats(
         total=total,
         limit=limit,
         current_index=current_index,
-        has_reached_limit=total >= limit,
-        next_year_count=max(0, total - limit),
+        has_reached_limit=has_reached_limit,
+        next_year_count=next_year_count,
     )
+
+
+# ---------------------------------------------------------------------------
+# Daily quote
+# ---------------------------------------------------------------------------
 
 
 async def get_daily_quote(db: AsyncSession) -> DailyQuoteResponse:
-    total = await db.scalar(select(sql_func.count(YearQuote.id))) or 0
+    """Return the quote for today.
+
+    Day 1 → always "Feliz año {current_year}!" (not in DB, id=-1).
+    Days 2+ → if slots_needed > total_quotes: random.choice(quotes);
+              else deterministic slot mapping (index = day - 2).
+    """
     now = datetime.now()
+    day_of_year = now.timetuple().tm_yday  # 1-366
+    quotes = await _list_quotes_ordered(db)
+    total = len(quotes)
+
+    # Day 1: Feliz año greeting, never stored in DB
+    if day_of_year == 1:
+        greeting = f"🎉 Feliz año {now.year}!"
+        ctx = QuoteContext(current=1, limit=_year_limit(now.year),
+                           year=now.year, is_extra=False)
+        return DailyQuoteResponse(ok=True, quote=greeting, index=-1, context=ctx)
+
+    # No quotes available
     if total == 0:
-        ctx = QuoteContext(current=0, limit=_year_limit(now.year), year=now.year, is_extra=False)
+        placeholder = "⏳ El tiempo vuela, pero tú eres el piloto."
+        ctx = QuoteContext(current=day_of_year, limit=_year_limit(now.year),
+                           year=now.year, is_extra=False)
+        return DailyQuoteResponse(ok=True, quote=placeholder, index=-1, context=ctx)
+
+    # Slots needed to reach today (excluyendo día 1 = Feliz año)
+    slots_needed = day_of_year - 2
+
+    if slots_needed >= total:
+        # Not enough quotes to fill all slots → pick random from available
+        chosen = random.choice(quotes)
+        ctx = _get_quote_seq(quotes.index(chosen))
         return DailyQuoteResponse(
             ok=True,
-            quote="⏳ El tiempo vuela, pero tú eres el piloto.",
-            index=-1,
+            quote=chosen.quote_text,
+            index=chosen.id,
             context=ctx,
         )
-    day_of_year = now.timetuple().tm_yday
-    index = (day_of_year - 1) % total
-    result = await db.execute(select(YearQuote).order_by(YearQuote.id).offset(index).limit(1))
-    row = result.scalar_one_or_none()
-    quote_text = row.quote_text if row else "⏳ El tiempo vuela, pero tú eres el piloto."
-    ctx = _get_quote_context(index, now.year)
-    return DailyQuoteResponse(ok=True, quote=quote_text, index=index, context=ctx)
 
-
-async def get_all_quotes(db: AsyncSession) -> QuoteListResponse:
-    result = await db.execute(select(YearQuote).order_by(YearQuote.id))
-    rows = result.scalars().all()
-    return QuoteListResponse(
+    # Enough quotes → deterministic position
+    idx = slots_needed
+    row = quotes[idx]
+    ctx = _get_quote_seq(idx)
+    return DailyQuoteResponse(
         ok=True,
-        data=[QuoteResponse(id=r.id, quote_text=r.quote_text, created_at=r.created_at) for r in rows],
-        count=len(rows),
+        quote=row.quote_text,
+        index=row.id,
+        context=ctx,
     )
 
 
-async def add_quote(db: AsyncSession, quote_text: str, target_year: Optional[int] = None) -> tuple[Optional[YearQuote], bool]:
-    """Returns (quote_or_none, is_duplicate).
+# ---------------------------------------------------------------------------
+# Quote CRUD
+# ---------------------------------------------------------------------------
 
-    Args:
-        db: Database session
-        quote_text: Quote text to add
-        target_year: Optional year bucket (for placement planning; currently appends to end)
+
+async def add_quote(
+    db: AsyncSession,
+    quote_text: str,
+    target_year: Optional[int] = None,
+) -> tuple[Optional[YearQuote], bool]:
+    """Append a new user quote as the last position in the ordered list.
+
+    Returns (quote_or_none, is_duplicate).
+    Slot 1 (quote_id=1 = Feliz año) is auto-generated and protected —
+    duplicate-text check ignores it as it's not stored.
     """
-    existing = (await db.execute(select(YearQuote.quote_text).where(YearQuote.quote_text == quote_text))).scalar_one_or_none()
+    existing = (
+        await db.execute(
+            select(YearQuote.quote_text).where(YearQuote.quote_text == quote_text)
+        )
+    ).scalar_one_or_none()
     if existing:
         return None, True
-    db.add(YearQuote(quote_text=quote_text))
+
+    # Fetch current last quote to compute next sequential id
+    quotes = await _list_quotes_ordered(db)
+    last_id = quotes[-1].id if quotes else 1
+
+    new_quote = YearQuote(id=last_id + 1, quote_text=quote_text)
+    db.add(new_quote)
     await db.commit()
-    # Re-fetch via async SELECT
-    result = await db.execute(select(YearQuote).where(YearQuote.quote_text == quote_text))
-    new_row = result.scalar_one_or_none()
-    return new_row, False
+    # Object has id assigned after commit; use it directly instead of re-fetch
+    return new_quote, False
 
 
 async def get_quote_by_id(db: AsyncSession, quote_id: int) -> Optional[YearQuote]:
-    return (await db.execute(select(YearQuote).where(YearQuote.id == quote_id))).scalar_one_or_none()
+    """Find a quote by its sequential position id. id=1 (Feliz año) is never stored → returns None."""
+    if quote_id == 1:
+        return None   # Feliz año slot, not stored in DB
+    return (
+        await db.execute(
+            select(YearQuote).where(YearQuote.id == quote_id)
+        )
+    ).scalar_one_or_none()
+
+
+async def edit_quote(db: AsyncSession, quote_id: int, new_text: str) -> Optional[YearQuote]:
+    """Update text for a quote at position *quote_id*. quote_id=1 is locked.
+
+    Returns the updated quote, or None if not found / id=1.
+    """
+    if quote_id == 1:
+        return None
+    row = await get_quote_by_id(db, quote_id)
+    if not row:
+        return None
+    # Check text duplicate
+    dup = (
+        await db.execute(
+            select(YearQuote).where(
+                YearQuote.quote_text == new_text,
+                YearQuote.id != quote_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if dup:
+        return None
+    row.quote_text = new_text
+    await db.commit()
+    await db.refresh(row)
+    return row
 
 
 async def delete_quote(db: AsyncSession, quote_id: int) -> bool:
+    """Delete a quote and reindex all remaining quotes (FR-4 requirement).
+
+    Day 1 (quote_id=1) is locked -> returns False without deleting.
+    After deletion all quotes following the removed slot shift up by one.
+    reindex refreshes the sequential mapping.
+    """
+    if quote_id == 1:
+        logger.warning("Blocked delete attempt on day 1 (Feliz año)")
+        return False
     row = await get_quote_by_id(db, quote_id)
     if not row:
         return False
     await db.delete(row)
     await db.commit()
-    logger.info("Deleted year quote id=%s", quote_id)
+    logger.info("Deleted quote id=%s (%s)", quote_id, row.quote_text[:60])
+
+    # Reindex remaining quotes so maps are contiguous again
+    await reindex_quotes(db)
     return True
 
 
+async def get_quote_by_seq(db: AsyncSession, seq: int) -> Optional[YearQuote]:
+    """Get quote at 0-indexed *seq* position in the ordered list."""
+    if seq < 0:
+        return None
+    quotes = await _list_quotes_ordered(db)
+    if seq >= len(quotes):
+        return None
+    return quotes[seq]
+
+
+async def get_all_quotes(db: AsyncSession) -> QuoteListResponse:
+    """Return all user quotes ordered by id, starting from 2."""
+    quotes = await _list_quotes_ordered(db)
+    return QuoteListResponse(
+        ok=True,
+        data=[
+            QuoteResponse(id=q.id, quote_text=q.quote_text, created_at=q.created_at)
+            for q in quotes
+        ],
+        count=len(quotes),
+    )
+
+
 # ---------------------------------------------------------------------------
-# Year Progress
+# Year progress
 # ---------------------------------------------------------------------------
+
 
 async def get_year_progress() -> YearProgressData:
     now = datetime.now()
@@ -199,6 +418,7 @@ def generate_progress_bar(percent: float, length: int = 20) -> str:
 # Subscriptions
 # ---------------------------------------------------------------------------
 
+
 async def get_all_subscriptions(db: AsyncSession) -> SubscriptionListResponse:
     result = await db.execute(select(YearSubscription).order_by(YearSubscription.id))
     rows = result.scalars().all()
@@ -216,9 +436,7 @@ async def get_all_subscriptions(db: AsyncSession) -> SubscriptionListResponse:
 
 
 async def set_subscription(db: AsyncSession, user_id: int, hour: int) -> YearSubscription:
-    stmt = (
-        select(YearSubscription).where(YearSubscription.user_id == user_id)
-    )
+    stmt = select(YearSubscription).where(YearSubscription.user_id == user_id)
     result = await db.execute(stmt)
     existing = result.scalar_one_or_none()
     if existing:
@@ -232,7 +450,9 @@ async def set_subscription(db: AsyncSession, user_id: int, hour: int) -> YearSub
 
 
 async def delete_subscription(db: AsyncSession, user_id: int) -> bool:
-    result = await db.execute(select(YearSubscription).where(YearSubscription.user_id == user_id))
+    result = await db.execute(
+        select(YearSubscription).where(YearSubscription.user_id == user_id)
+    )
     row = result.scalar_one_or_none()
     if not row:
         return False
@@ -242,7 +462,6 @@ async def delete_subscription(db: AsyncSession, user_id: int) -> bool:
 
 
 async def get_enabled_subscriptions(db: AsyncSession) -> list[YearSubscription]:
-    """Return all subscriptions (all registered ones are subscribed)."""
     result = await db.execute(select(YearSubscription))
     return list(result.scalars().all())
 
@@ -250,6 +469,7 @@ async def get_enabled_subscriptions(db: AsyncSession) -> list[YearSubscription]:
 # ---------------------------------------------------------------------------
 # Extra Flag & New Year
 # ---------------------------------------------------------------------------
+
 
 async def is_new_year(db: AsyncSession, override_year: int | None = None) -> bool:
     """Return True if today is January 1 AND a greeting quote hasn't been added yet."""
@@ -271,9 +491,11 @@ async def add_new_year_greeting(db: AsyncSession, override_year: int | None = No
     if now.month != 1 or now.day != 1:
         return None
     greeting = f"🎉 Feliz año {add_year}!"
-    existing = (await db.execute(
-        select(YearQuote).where(YearQuote.quote_text == greeting).limit(1)
-    )).scalar_one_or_none()
+    existing = (
+        await db.execute(
+            select(YearQuote).where(YearQuote.quote_text == greeting).limit(1)
+        )
+    ).scalar_one_or_none()
     if existing:
         return existing
     db.add(YearQuote(quote_text=greeting))
@@ -283,12 +505,11 @@ async def add_new_year_greeting(db: AsyncSession, override_year: int | None = No
     )
     row = result.scalar_one_or_none()
     if row:
-        logger.info("✅ New year greeting added: %s", greeting)
+        logger.info("New year greeting added: %s", greeting)
     return row
 
 
 async def get_or_create_extra_flag(db: AsyncSession, year: int) -> YearExtraFlag:
-    """Return existing YearExtraFlag for year, or create one with asked=False."""
     result = await db.execute(select(YearExtraFlag).where(YearExtraFlag.year == year))
     flag = result.scalar_one_or_none()
     if flag:
@@ -301,7 +522,6 @@ async def get_or_create_extra_flag(db: AsyncSession, year: int) -> YearExtraFlag
 
 
 async def set_extra_flag_asked(db: AsyncSession, year: int, asked: bool = True) -> YearExtraFlag:
-    """Set the 'asked' flag for a given year. Creates record if needed."""
     flag = await get_or_create_extra_flag(db, year)
     flag.asked = asked
     await db.commit()
@@ -310,7 +530,7 @@ async def set_extra_flag_asked(db: AsyncSession, year: int, asked: bool = True) 
 
 
 # ---------------------------------------------------------------------------
-# Extended daily quote (full context — for add-quote confirmation flow)
+# Extended daily quote (for add-quote confirmation flow)
 # ---------------------------------------------------------------------------
 
 
@@ -333,21 +553,20 @@ async def get_extended_daily_quote(db: AsyncSession) -> dict:
 
 
 async def migrate_legacy_subs(db: AsyncSession) -> dict:
-    """Import subscriptions from the legacy JSON file if DB table is empty."""
-    existing = (await db.execute(select(sql_func.count(YearSubscription.id)))).scalar() or 0
+    existing = (
+        await db.execute(select(sql_func.count(YearSubscription.id)))
+    ).scalar() or 0
     if existing > 0:
         return {"migrated": False, "total": existing}
-
     legacy_path = os.path.normpath(
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "year", "year", "year_subs.json")
+        os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                     "..", "..", "..", "year", "year", "year_subs.json")
     )
     if not os.path.exists(legacy_path):
         logger.warning("Legacy subs JSON not found at %s", legacy_path)
         return {"migrated": False, "total": 0}
-
     with open(legacy_path, "r", encoding="utf-8") as f:
         raw = json.load(f)
-
     migrated = 0
     for uid_str, data in raw.items():
         try:
@@ -357,7 +576,6 @@ async def migrate_legacy_subs(db: AsyncSession) -> dict:
             migrated += 1
         except (ValueError, TypeError):
             logger.warning("Invalid sub entry: %s = %s", uid_str, data)
-
     await db.commit()
     logger.info("Migrated %d legacy year subscriptions from JSON", migrated)
     return {"migrated": True, "total": migrated}
