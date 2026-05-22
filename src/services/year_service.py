@@ -120,35 +120,38 @@ async def reindex_quotes(db: AsyncSession) -> int:
 # ---------------------------------------------------------------------------
 
 
-def _get_quote_seq(index: int) -> QuoteContext:
+def _get_quote_seq(index: int, target_year: int | None = None) -> QuoteContext:
     """Given a 0-based *index* into the user-quote list, return contextual info.
 
     Position 1 (id=1) = Feliz año — never in DB, handled in _get_quote_context.
     index=0 maps to slot position=2 (day 2), index=365 → position=366.
+
+    If *target_year* is given, use it as the *reference year* instead of
+    ``datetime.now().year``.  This is important when the quote list has already
+    overflowed into the next year and the caller needs the *target-year* context
+    rather than the in-progress year.
     """
     now = datetime.now()
+    ref_year = target_year if target_year is not None else now.year
+    ref_limit = _year_limit(ref_year)
+
     # index == 0 → second slot = day 2; index == 365 → day 366
     position_in_list = index + 1   # 1-based in user-quote list (starts at slot 2)
-    day_of_year = position_in_list + 1  # +1 because slot 1 = day 1 = Feliz año
-    limit = _year_limit(now.year)
+    day_of_year    = position_in_list + 1  # +1 because slot 1 = day 1 = Feliz año
 
-    if day_of_year <= limit:
-        # Still in current year
+    if day_of_year <= ref_limit:
         return QuoteContext(
             current=day_of_year,
-            limit=limit,
-            year=now.year,
+            limit=ref_limit,
+            year=ref_year,
             is_extra=False,
         )
 
-    # Overtaken the current year → extra quotes = year N+1
-    over = day_of_year - limit  # e.g. position 366 in limit=365 → over=1 = day 2 of next year
-    next_year = now.year + 1
+    next_year   = ref_year + 1
     extra_limit = _year_limit(next_year)
-    # day_of_year within next year context:
-    effective_day = over + 1  # day in next-year numbering (starts at 2 since day1=greeting)
+    over        = day_of_year - ref_limit
     return QuoteContext(
-        current=effective_day,
+        current=over + 1,
         limit=extra_limit,
         year=next_year,
         is_extra=True,

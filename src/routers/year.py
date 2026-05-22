@@ -158,7 +158,13 @@ async def admin_add_quote(body: QuoteCreate, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=409, detail="Quote already exists")
     stats = await year_service.get_quote_stats(db)
     now = datetime.now()
-    ctx = year_service._get_quote_seq(stats.current_index)
+    # Determine which year the newly added quote lands in.
+    # Prefer explicit target_year, otherwise: current in-progress year unless
+    # all slots of the current year are already filled (overflow → next year).
+    ref_year = body.target_year if body.target_year is not None else (
+        now.year + 1 if stats.has_reached_limit else now.year
+    )
+    ctx = year_service._get_quote_seq(stats.current_index, target_year=ref_year)
     return AddQuoteResponse(
         ok=True,
         success=True,
