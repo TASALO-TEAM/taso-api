@@ -87,6 +87,18 @@ class SubscriptionListResponse(BaseModel):
     count: int
 
 
+class EditQuoteRequest(BaseModel):
+    """Request body for PUT /year/quotes/{id} (edit a quote)."""
+    quote_text: str = Field(..., min_length=5, description="New quote text, minimum 5 chars")
+
+
+class EditQuoteResponse(BaseModel):
+    ok: bool = True
+    id: int
+    quote_text: str
+    created_at: datetime
+
+
 class AddQuoteResponse(BaseModel):
     ok: bool = True
     success: bool
