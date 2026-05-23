@@ -105,3 +105,4 @@ class AddQuoteResponse(BaseModel):
     is_duplicate: bool
     index: int
     context: QuoteContext
+    quote_id: int

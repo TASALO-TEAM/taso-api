@@ -156,21 +156,26 @@ async def admin_add_quote(body: QuoteCreate, db: AsyncSession = Depends(get_db))
     row, is_dup = await year_service.add_quote(db, body.quote_text, target_year=body.target_year)
     if is_dup:
         raise HTTPException(status_code=409, detail="Quote already exists")
-    stats = await year_service.get_quote_stats(db)
     now = datetime.now()
+    # Use the actual quote position (row.id) to compute context
+    # row.id is the sequential position; id=1 = Feliz año (never stored),
+    # ids 2+ are user quotes → 0-based index = row.id - 2
+    quote_index = row.id - 2
     # Determine which year the newly added quote lands in.
     # Prefer explicit target_year, otherwise: current in-progress year unless
     # all slots of the current year are already filled (overflow → next year).
+    total = await year_service.get_quote_stats(db)
     ref_year = body.target_year if body.target_year is not None else (
-        now.year + 1 if stats.has_reached_limit else now.year
+        now.year + 1 if total.has_reached_limit else now.year
     )
-    ctx = year_service._get_quote_seq(stats.current_index, target_year=ref_year)
+    ctx = year_service._get_quote_seq(quote_index, target_year=ref_year)
     return AddQuoteResponse(
         ok=True,
         success=True,
         is_duplicate=False,
-        index=stats.current_index,
+        index=quote_index,
         context=ctx,
+        quote_id=row.id,
     )
 
 
