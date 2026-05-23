@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,6 +83,31 @@ async def get_my_subscription(user_id: int, db: AsyncSession = Depends(get_db)):
         id=sub.id, user_id=sub.user_id, hour=sub.hour,
         created_at=sub.created_at, updated_at=sub.updated_at,
     )
+
+
+# ── User-owned subscription endpoints (no admin key required) ──────────────
+
+
+@router.post("/subscriptions/me/{user_id}", response_model=SubscriptionResponse)
+async def set_my_subscription(user_id: int, body: SubscriptionCreate, db: AsyncSession = Depends(get_db)):
+    """Create or update the caller's own subscription. No admin key required."""
+    if body.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot subscribe on behalf of another user",
+        )
+    sub = await year_service.set_my_subscription(db, user_id, body.hour)
+    return SubscriptionResponse(
+        id=sub.id, user_id=sub.user_id, hour=sub.hour,
+        created_at=sub.created_at, updated_at=sub.updated_at,
+    )
+
+
+@router.delete("/subscriptions/me/{user_id}")
+async def delete_my_subscription(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Delete the caller's own subscription. No admin key required."""
+    ok = await year_service.delete_my_subscription(db, user_id)
+    return {"ok": ok, "deleted": ok, "user_id": user_id}
 
 
 @router.get("/subscriptions", response_model=SubscriptionListResponse)

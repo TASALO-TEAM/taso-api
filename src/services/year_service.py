@@ -469,6 +469,56 @@ async def get_enabled_subscriptions(db: AsyncSession) -> list[YearSubscription]:
     return list(result.scalars().all())
 
 
+# ── User-owned subscription helpers (no admin key required) ─────────────────
+
+
+async def set_my_subscription(
+    db: AsyncSession, user_id: int, hour: int
+) -> YearSubscription:
+    """Create or update *own* subscription (user-facing, no admin key).
+
+    Args:
+        db:      Async DB session.
+        user_id: Telegram user id — must be the caller's own id (enforced in router).
+        hour:    0–23 UTC hour for the daily alert.
+
+    Returns:
+        The upserted YearSubscription row.
+    """
+    stmt = select(YearSubscription).where(YearSubscription.user_id == user_id)
+    result = await db.execute(stmt)
+    existing = result.scalar_one_or_none()
+    if existing:
+        existing.hour = hour
+    else:
+        existing = YearSubscription(user_id=user_id, hour=hour)
+        db.add(existing)
+    await db.commit()
+    await db.refresh(existing)
+    return existing
+
+
+async def delete_my_subscription(db: AsyncSession, user_id: int) -> bool:
+    """Delete *own* subscription (user-facing, no admin key).
+
+    Args:
+        db:      Async DB session.
+        user_id: Telegram user id — must be the caller's own id (enforced in router).
+
+    Returns:
+        True if a row was deleted, False if none existed.
+    """
+    result = await db.execute(
+        select(YearSubscription).where(YearSubscription.user_id == user_id)
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        return False
+    await db.delete(row)
+    await db.commit()
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Extra Flag & New Year
 # ---------------------------------------------------------------------------
