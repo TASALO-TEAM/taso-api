@@ -20,6 +20,7 @@ from src.routers import stats as stats_router
 from src.routers import images as images_router
 from src.services.scheduler import create_scheduler, init_scheduler_status, init_cubanomic_scheduler, init_image_capture_scheduler, init_year_scheduler
 from src.routers import year as year_router
+from src.routers import alerts as alerts_router
 
 settings = get_settings()
 
@@ -131,6 +132,7 @@ app.include_router(stats_router.router, prefix="/api/v1/admin/stats", tags=["Adm
 app.include_router(images_router.router, tags=["Images"])
 app.include_router(year_router.router, prefix="/api/v1/year", tags=["Year"])
 app.include_router(year_router.admin_router, prefix="/api/v1/year", tags=["Year Admin"])
+app.include_router(alerts_router.router, tags=["Price Alerts"])
 
 
 @app.get("/api/v1/health", tags=["Health"])
