@@ -74,6 +74,7 @@ class SubscriptionCreate(BaseModel):
 
 
 class SubscriptionResponse(BaseModel):
+    ok: bool = True
     id: int
     user_id: int
     hour: int
