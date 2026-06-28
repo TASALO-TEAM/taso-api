@@ -12,6 +12,7 @@ class PriceAlertSchema(BaseModel):
     user_id: int
     coin: str
     target_price: float
+    price_at_creation: Optional[float] = None   # precio real al momento de crear
     condition: str   # "ABOVE" | "BELOW"
     status: str      # "ACTIVE" | "TRIGGERED"
     created_at: datetime
@@ -22,14 +23,16 @@ class PriceAlertSchema(BaseModel):
 
 
 class AlertCreateSchema(BaseModel):
-    """Schema para crear una alerta de precio.
+    """Schema para crear alertas de precio.
 
-    Siempre crea dos alertas (ABOVE + BELOW) para el par coin/price.
+    Recibe el precio actual de la moneda en el momento de la creación
+    para que el checker pueda detectar cruces reales y evitar falsos positivos.
     """
 
     user_id: int
     coin: str = Field(..., min_length=2, max_length=20)
     target_price: float = Field(..., gt=0)
+    price_at_creation: float = Field(..., gt=0)   # precio real al momento de crear
 
     @field_validator("coin")
     @classmethod

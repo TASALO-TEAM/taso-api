@@ -18,6 +18,7 @@ async def create_alert(
     coin: str,
     target_price: float,
     condition: str,
+    price_at_creation: float,
 ) -> Optional[PriceAlert]:
     """
     Crea una alerta de precio individual (ABOVE o BELOW).
@@ -26,8 +27,10 @@ async def create_alert(
         db: Sesión de base de datos
         user_id: Telegram user_id
         coin: Símbolo de la moneda (ej: "BTC")
-        target_price: Precio objetivo
+        target_price: Precio objetivo configurado por el usuario
         condition: "ABOVE" o "BELOW"
+        price_at_creation: Precio real de la moneda en el momento de crear la alerta.
+            Usado por el checker para detectar cruces reales y evitar falsos positivos.
 
     Returns:
         PriceAlert creada o None si hubo error
@@ -36,6 +39,7 @@ async def create_alert(
         user_id=user_id,
         coin=coin.upper(),
         target_price=target_price,
+        price_at_creation=price_at_creation,
         condition=condition,
         status="ACTIVE",
     )

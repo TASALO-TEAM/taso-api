@@ -118,6 +118,7 @@ async def create_alert_endpoint(
             coin=body.coin,
             target_price=body.target_price,
             condition=condition,
+            price_at_creation=body.price_at_creation,
         )
         if alert:
             created.append(PriceAlertSchema.model_validate(alert))

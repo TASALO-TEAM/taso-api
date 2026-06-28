@@ -15,6 +15,7 @@ class PriceAlert(Base):
     user_id = Column(BigInteger, nullable=False, index=True)   # Telegram user_id
     coin = Column(String(20), nullable=False, index=True)       # "BTC", "ETH", etc.
     target_price = Column(Float, nullable=False)
+    price_at_creation = Column(Float, nullable=True)            # precio real al momento de crear la alerta
     condition = Column(String(10), nullable=False)              # "ABOVE" | "BELOW"
     status = Column(String(10), nullable=False, default="ACTIVE")  # "ACTIVE" | "TRIGGERED"
     created_at = Column(
