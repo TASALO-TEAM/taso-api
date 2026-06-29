@@ -11,6 +11,7 @@ pipelines.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -22,6 +23,7 @@ from src.models.rate_snapshot import RateSnapshot
 from src.scrapers.fuel import fetch_fuel
 
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
@@ -119,10 +121,12 @@ async def fetch_and_save_fuel(db: AsyncSession) -> dict[str, dict[str, Any]] | N
     """
     raw = await fetch_fuel()
     if not raw:
+        logger.warning("⚠️ fetch_fuel devolvió None o vacío")
         return None
 
     normalized = _normalize_fuel_data(raw)
     if not normalized:
+        logger.warning("⚠️ _normalize_fuel_data devolvió lista vacía (raw=%s)", json.dumps(raw, ensure_ascii=False, default=str)[:1000])
         return None
 
     now = datetime.now(timezone.utc)
@@ -160,14 +164,21 @@ async def get_fuel_rates(db: AsyncSession, max_age_minutes: int = 60) -> tuple[d
 
     if latest is None or _is_stale(latest.fetched_at, now, max_age_minutes):
         # Lazy refresh on cache miss / stale data
+        logger.info("⛽ /fuel: Sin datos o stale (latest=%s, max_age=%sm), intentando scrapeo", latest.fetched_at if latest else None, max_age_minutes)
         fresh = await fetch_and_save_fuel(db)
         if fresh is None:
             # Fallback to whatever we have (if anything)
+            logger.warning("⚠️ /fuel: fetch_and_save_fuel devolvió None, usando fallback en DB")
             latest = await _get_latest_snapshot(db)
             if latest is None:
+                logger.warning("⚠️ /fuel: Sin datos en DB y scrapeo fallido")
                 return {}, now
         else:
             latest = await _get_latest_snapshot(db)
+            if latest:
+                logger.info("✅ /fuel: Scrapeo exitoso, latest=%s", latest.fetched_at)
+            else:
+                logger.warning("⚠️ /fuel: Scrapeo devolvió datos pero latest en DB es None")
 
     if latest is None:
         return {}, now
