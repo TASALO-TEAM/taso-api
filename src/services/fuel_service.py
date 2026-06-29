@@ -77,19 +77,25 @@ def _normalize_fuel_rates(raw: dict[str, dict[str, Any]]) -> dict[str, dict[str,
 
         range_min = info.get("range_min")
         range_max = info.get("range_max")
-        if range_min is None and range_max is None:
+        primary = info.get("primary_value")
+
+        if range_min is None and range_max is None and primary is None:
             continue
 
         buy = float(range_min) if range_min is not None else None
         sell = float(range_max) if range_max is not None else buy
-        rate = sell if sell is not None else buy
+        rate = float(primary) if primary is not None else sell
+
+        # change vs snapshot anterior en DB
+        change = "neutral"
+        prev_rate = info.get("prev_median")
 
         result[key] = {
             "rate": rate,
             "buy": buy,
             "sell": sell,
-            "change": "neutral",          # change vs prev snapshot (calculado abajo si hay historial)
-            "prev_rate": None,
+            "change": change,
+            "prev_rate": prev_rate,
             "subtype": info.get("subtype") or _SUBTYPES.get(key),
             "unit": info.get("unit") or _UNITS.get(key, "CUP/L"),
             "change_pct": info.get("change_pct"),

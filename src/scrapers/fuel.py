@@ -1,18 +1,26 @@
 """ElToque fuel price scraper.
 
-Estrategia de obtención de datos (en orden de prioridad):
-  1. API JSON interna de ElToque (tasas.eltoque.com/v1/fuel o similar)
-  2. Scrape de la sub-página /combustible con headers de navegador real
-  3. Scrape de la página principal con múltiples User-Agents
+Estrategia: extrae datos del bloque __NEXT_DATA__ (JSON embebido por Next.js)
+en la página principal de eltoque.com. No requiere JS, Playwright ni Selenium.
 
-eltoque.com es una SPA (Next.js). El HTML inicial que devuelve httpx
-no contiene el DOM renderizado, por eso el parser original fallaba.
-Esta versión intenta la API JSON primero (sin JS) y luego hace scrape
-con técnicas anti-bot básicas.
+Los datos están en:
+  props.pageProps.fuelPrices.items[]
+
+Estructura de cada item:
+  {
+    "fuel": "B94",
+    "label": "B-94",
+    "subtitle": "Especial",
+    "stats": {"min": 3000, "max": 7367, "median": 3900},
+    "previous": {"median": 4000},
+    "delta": {"median_pct": -2.5},
+    "display": {"range_min": 3200, "range_max": 4710, "primary_value": 3900}
+  }
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import Any, Optional
@@ -24,21 +32,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
-ELTOQUE_API_FUEL_URLS = [
-    "https://tasas.eltoque.com/v1/fuel",
-    "https://tasas.eltoque.com/v1/combustible",
-    "https://api.eltoque.com/v1/fuel",
-]
-
-ELTOQUE_SCRAPE_URLS = [
-    "https://eltoque.com/combustible",
-    "https://eltoque.com",
-]
-
+ELTOQUE_URL = "https://eltoque.com"
 DEFAULT_TIMEOUT = 20.0
-
-# Nombres de combustible que reconocemos en el HTML
-FUEL_TOKENS = ("B-94", "B-90", "B-83", "Gas LP", "Petróleo", "Gasolina")
 
 _BROWSER_HEADERS = {
     "User-Agent": (
@@ -46,7 +41,7 @@ _BROWSER_HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/125.0.0.0 Safari/537.36"
     ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
     "Accept-Encoding": "gzip, deflate, br",
     "Cache-Control": "no-cache",
@@ -57,256 +52,173 @@ _BROWSER_HEADERS = {
     "Upgrade-Insecure-Requests": "1",
 }
 
-_JSON_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/125.0.0.0 Safari/537.36"
-    ),
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "es-ES,es;q=0.9",
-    "Referer": "https://eltoque.com/",
-    "Origin": "https://eltoque.com",
+# Mapeo de claves internas → nombre normalizado usado en taso
+_FUEL_KEY_MAP = {
+    "B94": "B-94",
+    "B90": "B-90",
+    "B83": "B-83",
+    "Petroleo": "Petroleo",
+    "PETROLEO": "Petroleo",
+    "GAS_LP": "Gas_LP",
+    "GASLP": "Gas_LP",
+    "GasLP": "Gas_LP",
 }
 
 
 async def fetch_fuel(
     timeout: float = DEFAULT_TIMEOUT,
 ) -> Optional[dict[str, dict[str, Any]]]:
-    """Obtiene precios de combustible de ElToque.
-
-    Intenta en orden:
-    1. API JSON interna de ElToque (más ligera, sin parsear HTML)
-    2. Scrape de la sub-página /combustible
-    3. Scrape de la página principal
+    """Obtiene precios de combustible de eltoque.com via __NEXT_DATA__.
 
     Returns:
-        Dict con datos por tipo de combustible, o None si todo falla.
+        Dict keyed by nombre normalizado ("B-94", "B-90", etc.) con:
+          - subtype: str
+          - range_min, range_max: float
+          - primary_value: float  (mediana)
+          - unit: "CUP/L" o "CUP/balón"
+          - change_pct: float | None
+          - change_direction: "up" | "down" | "neutral"
+        O None si falla.
     """
-    # Estrategia 1: API JSON interna
-    result = await _try_json_api(timeout)
-    if result:
-        logger.info("✅ [fuel] Datos obtenidos via API JSON (estrategia 1)")
-        return result
-
-    # Estrategia 2 y 3: Scrape HTML
-    from bs4 import BeautifulSoup
-    for url in ELTOQUE_SCRAPE_URLS:
-        html_text = await _fetch_html(url, timeout)
-        if not html_text or len(html_text) < 500:
-            logger.warning("⚠️ [fuel] HTML muy corto (%d bytes) de %s — posible Cloudflare challenge",
-                           len(html_text) if html_text else 0, url)
-            continue
-
-        soup = BeautifulSoup(html_text, "html.parser")
-        result = _parse_fuel_items(soup)
-        if result:
-            logger.info("✅ [fuel] Datos obtenidos via scrape HTML de %s", url)
-            return result
-        else:
-            logger.warning("⚠️ [fuel] Parser no encontró datos en %s (HTML=%d bytes)",
-                           url, len(html_text))
-
-    logger.error("❌ [fuel] Todas las estrategias fallaron")
-    return None
-
-
-async def _try_json_api(timeout: float) -> Optional[dict[str, dict[str, Any]]]:
-    """Intenta obtener datos de combustible de la API JSON de ElToque."""
-    async with httpx.AsyncClient(verify=False, timeout=timeout, follow_redirects=True) as client:
-        for url in ELTOQUE_API_FUEL_URLS:
-            try:
-                resp = await client.get(url, headers=_JSON_HEADERS)
-                if resp.status_code != 200:
-                    continue
-                data = resp.json()
-                # Si la respuesta tiene estructura de combustible, parsearla
-                parsed = _parse_json_response(data)
-                if parsed:
-                    return parsed
-            except Exception as e:
-                logger.debug("⚠️ [fuel] API %s falló: %s", url, e)
-                continue
-    return None
-
-
-def _parse_json_response(data: Any) -> Optional[dict[str, dict[str, Any]]]:
-    """Intenta extraer datos de combustible de una respuesta JSON de ElToque."""
-    if not isinstance(data, dict):
+    html = await _fetch_html(timeout)
+    if not html:
+        logger.error("❌ [fuel] No se pudo obtener HTML de eltoque.com")
         return None
 
-    result: dict[str, dict[str, Any]] = {}
+    next_data = _extract_next_data(html)
+    if not next_data:
+        logger.error("❌ [fuel] __NEXT_DATA__ no encontrado en el HTML (%d bytes)", len(html))
+        return None
 
-    # Buscar claves típicas de combustible en la respuesta
-    for key in ("fuel", "combustible", "gasolina", "items"):
-        items = data.get(key)
-        if isinstance(items, list):
-            for item in items:
-                name = item.get("name") or item.get("type") or item.get("currency")
-                if not name:
-                    continue
-                normalized = _normalize_name(name)
-                if not normalized:
-                    continue
-                result[normalized] = {
-                    "subtype": item.get("subtype") or item.get("label"),
-                    "range_min": _to_float(item.get("min") or item.get("buy") or item.get("price")),
-                    "range_max": _to_float(item.get("max") or item.get("sell") or item.get("price")),
-                    "unit": item.get("unit", "CUP/L"),
-                    "change_pct": _to_float(item.get("change_pct") or item.get("change")),
-                    "change_direction": item.get("direction") or "neutral",
-                }
+    fuel_prices = (
+        next_data
+        .get("props", {})
+        .get("pageProps", {})
+        .get("fuelPrices", {})
+    )
+    if not fuel_prices:
+        logger.error("❌ [fuel] fuelPrices no encontrado en __NEXT_DATA__")
+        return None
 
+    items = fuel_prices.get("items", [])
+    if not items:
+        logger.warning("⚠️ [fuel] fuelPrices.items vacío")
+        return None
+
+    result = _parse_fuel_items(items)
+    if result:
+        window_to = fuel_prices.get("window_to", "")
+        logger.info(
+            "✅ [fuel] %d tipos de combustible obtenidos (window_to=%s)",
+            len(result), window_to
+        )
     return result if result else None
 
 
-async def _fetch_html(url: str, timeout: float) -> Optional[str]:
-    """Descarga HTML de una URL con headers de navegador."""
+async def _fetch_html(timeout: float) -> Optional[str]:
+    """Descarga el HTML de eltoque.com con headers de navegador."""
     try:
         async with httpx.AsyncClient(
             verify=False,
             timeout=timeout,
             follow_redirects=True,
         ) as client:
-            resp = await client.get(url, headers=_BROWSER_HEADERS)
+            resp = await client.get(ELTOQUE_URL, headers=_BROWSER_HEADERS)
             if resp.status_code == 200:
+                logger.debug("✅ [fuel] HTML obtenido: %d bytes", len(resp.text))
                 return resp.text
-            logger.warning("⚠️ [fuel] HTTP %d para %s", resp.status_code, url)
+            logger.warning("⚠️ [fuel] HTTP %d para %s", resp.status_code, ELTOQUE_URL)
             return None
     except httpx.TimeoutException:
-        logger.warning("⚠️ [fuel] Timeout en %s", url)
+        logger.warning("⚠️ [fuel] Timeout al obtener HTML de eltoque.com")
         return None
     except Exception as e:
-        logger.warning("⚠️ [fuel] Error en %s: %s", url, e)
+        logger.warning("⚠️ [fuel] Error obteniendo HTML: %s", e)
         return None
 
 
-def _parse_fuel_items(soup: Any) -> dict[str, dict[str, Any]]:
-    """Extrae items de combustible del DOM renderizado.
+def _extract_next_data(html: str) -> Optional[dict]:
+    """Extrae y parsea el bloque __NEXT_DATA__ del HTML."""
+    m = re.search(
+        r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+        html,
+        re.DOTALL,
+    )
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(1))
+    except json.JSONDecodeError as e:
+        logger.error("❌ [fuel] Error parseando __NEXT_DATA__: %s", e)
+        return None
 
-    Busca el contenedor role="list" que tenga tokens de combustible.
-    Solo funciona si el HTML incluye el DOM renderizado (no SPA pura).
-    """
-    data: dict[str, dict[str, Any]] = {}
 
-    list_containers = soup.find_all("div", attrs={"role": "list"})
-    target_container = None
-    for container in list_containers:
-        items = container.find_all("div", attrs={"role": "listitem"})
-        if not items:
-            continue
-        texts = " ".join(item.get_text(" ", strip=True) for item in items)
-        if any(token in texts for token in FUEL_TOKENS):
-            target_container = container
-            break
+def _parse_fuel_items(items: list) -> dict[str, dict[str, Any]]:
+    """Convierte la lista de items de fuelPrices al formato interno de taso."""
+    result: dict[str, dict[str, Any]] = {}
 
-    if target_container is None:
-        return data
+    for item in items:
+        fuel_key = item.get("fuel", "")
+        label = item.get("label", fuel_key)
 
-    for item in target_container.find_all("div", attrs={"role": "listitem"}):
-        text = item.get_text(" ", strip=True)
-        if not any(token in text for token in FUEL_TOKENS):
-            continue
+        # Normalizar nombre
+        normalized = _FUEL_KEY_MAP.get(fuel_key) or _FUEL_KEY_MAP.get(label)
+        if not normalized:
+            # Intentar normalizar manualmente
+            clean = fuel_key.replace("-", "").replace("_", "").upper()
+            if clean in ("B94",):
+                normalized = "B-94"
+            elif clean in ("B90",):
+                normalized = "B-90"
+            elif clean in ("B83",):
+                normalized = "B-83"
+            elif "PETROLEO" in clean or "DIESEL" in clean:
+                normalized = "Petroleo"
+            elif "GAS" in clean or "LP" in clean:
+                normalized = "Gas_LP"
+            else:
+                logger.debug("⚠️ [fuel] Item ignorado: fuel=%s label=%s", fuel_key, label)
+                continue
 
-        record: dict[str, Any] = {
-            "subtype": _extract_subtype(item),
-            "range_min": None,
-            "range_max": None,
-            "unit": "CUP/L",
-            "change_pct": None,
-            "change_direction": "neutral",
+        display = item.get("display", {})
+        delta = item.get("delta", {})
+        previous = item.get("previous", {})
+
+        range_min = display.get("range_min")
+        range_max = display.get("range_max")
+        primary = display.get("primary_value")
+
+        # Si no hay display, usar stats
+        if range_min is None:
+            stats = item.get("stats", {})
+            range_min = stats.get("min")
+            range_max = stats.get("max")
+            primary = stats.get("median")
+
+        change_pct = delta.get("median_pct")
+        if change_pct is not None:
+            # eltoque usa negativo para bajada
+            if change_pct < 0:
+                direction = "down"
+                change_pct = abs(change_pct)
+            elif change_pct > 0:
+                direction = "up"
+            else:
+                direction = "neutral"
+        else:
+            direction = "neutral"
+
+        unit = "CUP/balón" if normalized == "Gas_LP" else "CUP/L"
+
+        result[normalized] = {
+            "subtype": item.get("subtitle"),
+            "range_min": float(range_min) if range_min is not None else None,
+            "range_max": float(range_max) if range_max is not None else None,
+            "primary_value": float(primary) if primary is not None else None,
+            "unit": unit,
+            "change_pct": round(abs(change_pct), 2) if change_pct is not None else None,
+            "change_direction": direction,
+            "prev_median": float(previous.get("median")) if previous.get("median") else None,
         }
 
-        _extract_prices(item, record)
-        _extract_change(item, record)
-
-        name = _extract_fuel_name(item, text)
-        if not name:
-            continue
-
-        data[name] = record
-
-    return data
-
-
-# ── Helpers de extracción HTML ────────────────────────────────────────────────
-
-def _extract_fuel_name(item: Any, fallback_text: str) -> Optional[str]:
-    heading = item.find(
-        "div",
-        style=lambda v: v and "font-weight: 600" in v and "font-size" in v,
-    )
-    if heading:
-        raw = heading.get_text(strip=True)
-        if raw:
-            return _normalize_name(raw)
-    first = fallback_text.split()[0]
-    return _normalize_name(first)
-
-
-def _normalize_name(raw: str) -> Optional[str]:
-    raw = raw.strip()
-    if raw in ("B-94", "B-90", "B-83"):
-        return raw
-    if raw in ("Petróleo", "Petroleo", "Diésel", "Diesel", "Gasolina"):
-        return "Petroleo"
-    if raw in ("Gas LP", "Gas", "LP", "GasLP"):
-        return "Gas_LP"
-    return None
-
-
-def _extract_subtype(item: Any) -> Optional[str]:
-    sub = item.find(
-        "div",
-        style=lambda v: v and "text-transform: uppercase" in v and "color: rgb(106, 115, 138)" in v,
-    )
-    if sub:
-        text = sub.get_text(strip=True)
-        if text:
-            return text
-    return None
-
-
-def _extract_prices(item: Any, record: dict[str, Any]) -> None:
-    price_div = item.find("div", style=lambda v: v and "align-items: flex-end" in v)
-    if not price_div:
-        return
-    full_text = price_div.get_text(" ", strip=True)
-    numbers = re.findall(r"[\d]+(?:\.[\d]+)?", full_text)
-    if not numbers:
-        return
-    floats = [float(n) for n in numbers]
-    if "CUP/balón" in full_text or "balón" in full_text.lower():
-        record["unit"] = "CUP/balón"
-    if len(floats) >= 2:
-        record["range_min"] = floats[0]
-        record["range_max"] = floats[1]
-    elif len(floats) == 1:
-        record["range_min"] = floats[0]
-        record["range_max"] = floats[0]
-
-
-def _extract_change(item: Any, record: dict[str, Any]) -> None:
-    change_span = item.find("span", style=lambda v: v and "color: rgb(31, 122, 58)" in v)
-    if not change_span:
-        return
-    text = change_span.get_text(strip=True)
-    if not text:
-        return
-    if "▼" in text:
-        record["change_direction"] = "down"
-    elif "▲" in text:
-        record["change_direction"] = "up"
-    m = re.search(r"(-?[\d]+(?:\.[\d]+)?)\s*%", text)
-    if m:
-        try:
-            record["change_pct"] = float(m.group(1))
-        except ValueError:
-            pass
-
-
-def _to_float(v: Any) -> Optional[float]:
-    try:
-        return float(v) if v is not None else None
-    except (TypeError, ValueError):
-        return None
+    return result
