@@ -11,80 +11,114 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from src.models.image_snapshot import ImageSnapshot
 from src.scrapers.images import capture_eltoque_image, ensure_directory_exists
+from src.scrapers.eltoque import fetch_eltoque
+from src.services.image_generator import generate_toque_image
 
 logger = logging.getLogger(__name__)
 
-
-# Configuration
 IMAGE_STORAGE_PATH = "/home/ersus/tasalo/taso-api/static/images/eltoque"
 
 
 def get_storage_path() -> str:
-    """Get the image storage path, checking for environment variable override."""
     return os.environ.get("TASALO_IMAGE_STORAGE_PATH", IMAGE_STORAGE_PATH)
 
 
 async def capture_and_store_image(
     db: AsyncSession,
-    source: str = "eltoque"
+    source: str = "eltoque",
+    force: bool = False,
 ) -> Dict:
     """
     Captura imagen y la almacena en filesystem + DB.
-    
+
+    Si ya existe una imagen de hoy y force=False, devuelve la existente
+    sin generar nada (cero consumo de CPU/memoria).
+
+    Estrategia:
+      1. Si hay imagen de hoy en DB → devolver sin generar (a menos que force=True)
+      2. Intentar captura con Playwright/Selenium (fiel al iframe original)
+      3. Si falla → generar con Pillow usando datos de tasas.eltoque.com
+      4. Guardar en filesystem + DB
+
     Args:
         db: Database session
         source: Source name ("eltoque")
-    
-    Returns:
-        dict: {success: bool, image: Optional[ImageSnapshot], error: Optional[str]}
+        force: Forzar regeneración aunque ya exista imagen de hoy
     """
+    # ── Paso 1: devolver imagen existente de hoy si existe ───────────────────
+    if not force:
+        existing = await get_today_image(db, source)
+        if existing and os.path.exists(existing.image_path):
+            logger.info("♻️ [capture] Imagen de hoy ya existe, devolviendo sin generar")
+            return {"success": True, "image": existing, "cached": True}
+
+    storage_path = get_storage_path()
+    os.makedirs(storage_path, exist_ok=True)
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    filename = f"{source}_{timestamp}.png"
+    output_path = os.path.join(storage_path, filename)
+
+    # ── Paso 2: intentar captura con browser ─────────────────────────────────
+    capture_result = await capture_eltoque_image(output_path)
+
+    if capture_result.get("success"):
+        logger.info("✅ [capture] Imagen capturada con browser: %s", output_path)
+        return await _save_snapshot(db, source, output_path, capture_result)
+
+    logger.warning(
+        "⚠️ [capture] Browser falló (%s), usando generador Pillow...",
+        capture_result.get("error", "unknown"),
+    )
+
+    # ── Paso 3: fallback — generar con Pillow ────────────────────────────────
+    rates_data = await fetch_eltoque()
+    if not rates_data:
+        return {"success": False, "error": "No se pudieron obtener datos de ElToque para generar imagen"}
+
+    img_bytes = generate_toque_image(rates_data)
+    if not img_bytes:
+        return {"success": False, "error": "Fallo al generar imagen con Pillow"}
+
+    with open(output_path, "wb") as f:
+        f.write(img_bytes)
+
+    file_size = os.path.getsize(output_path)
+    logger.info("✅ [capture] Imagen generada con Pillow: %s (%d bytes)", output_path, file_size)
+
+    return await _save_snapshot(
+        db, source, output_path,
+        {"file_size": file_size, "width": 800, "height": None, "generated": True}
+    )
+
+
+async def _save_snapshot(
+    db: AsyncSession,
+    source: str,
+    output_path: str,
+    result: dict,
+) -> dict:
+    """Guarda el registro de la imagen en la DB."""
     try:
-        storage_path = get_storage_path()
-        
-        # Asegurar directorio existe
-        ensure_directory_exists(f"{storage_path}/placeholder.jpg")
-        
-        # Generar filename con timestamp
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        filename = f"{source}_{timestamp}.jpg"
-        output_path = os.path.join(storage_path, filename)
-        
-        # Capturar imagen
-        result = await capture_eltoque_image(output_path)
-        
-        if not result["success"]:
-            return {
-                "success": False,
-                "error": result.get("error", "Unknown error")
-            }
-        
-        # Crear snapshot en DB
         snapshot = ImageSnapshot(
             source=source,
             image_path=output_path,
-            file_size=result["file_size"],
+            file_size=result.get("file_size", 0),
             extra_data=json.dumps({
-                "width": result["width"],
-                "height": result["height"],
-                "url": "https://iframe.cubanomic.com/"
-            })
+                "width": result.get("width"),
+                "height": result.get("height"),
+                "generated": result.get("generated", False),
+                "url": "https://iframe.cubanomic.com/",
+            }),
         )
-        
         db.add(snapshot)
         await db.commit()
         await db.refresh(snapshot)
-        
-        return {
-            "success": True,
-            "image": snapshot
-        }
-        
+        return {"success": True, "image": snapshot, "cached": False}
     except Exception as e:
         await db.rollback()
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        logger.error("❌ [capture] Error guardando snapshot en DB: %s", e)
+        return {"success": False, "error": str(e)}
 
 
 async def get_latest_image(

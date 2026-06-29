@@ -31,13 +31,17 @@ router = APIRouter(prefix="/api/v1/images", tags=["Images"])
 
 @router.post("/eltoque/capture", response_model=APIResponse)
 async def capture_eltoque_image_endpoint(
+    force: bool = Query(False, description="Forzar regeneración aunque ya exista imagen de hoy"),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Capturar imagen de ElToque manualmente (on-demand).
+    Capturar/generar imagen de ElToque.
+
+    Si ya existe imagen de hoy, devuelve la existente sin generar nada (force=false).
+    Con force=true regenera aunque ya exista.
     """
-    result = await capture_and_store_image(db, source="eltoque")
-    
+    result = await capture_and_store_image(db, source="eltoque", force=force)
+
     if not result["success"]:
         error_msg = result.get("error", "Unknown error")
         logger.error("Capture failed: %s", error_msg)
