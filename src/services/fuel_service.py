@@ -83,7 +83,7 @@ async def _get_latest_snapshot(db: AsyncSession, currency: str | None = None) ->
         stmt = stmt.where(RateSnapshot.currency == currency)
 
     result = await db.execute(stmt)
-    rows = result.scalars().unique().all()
+    rows = result.scalars().all()
     return rows[0] if rows else None
 
 
@@ -104,7 +104,7 @@ async def _get_previous_snapshot(db: AsyncSession, currency: str) -> RateSnapsho
         .limit(1)
     )
     result = await db.execute(stmt)
-    rows = result.scalars().unique().all()
+    rows = result.scalars().all()
     return rows[0] if rows else None
 
 
@@ -180,7 +180,7 @@ async def get_fuel_rates(db: AsyncSession, max_age_minutes: int = 60) -> tuple[d
         .limit(20)
     )
     result = await db.execute(stmt)
-    rows = result.scalars().unique().all()
+    rows = result.scalars().all()
 
     rates: dict[str, dict[str, Any]] = {}
     seen: set[str] = set()
