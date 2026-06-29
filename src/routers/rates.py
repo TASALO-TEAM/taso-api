@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
 from src.redis_client import RedisClient, get_redis
-from src.services import rates_service
+from src.services import fuel_service, rates_service
 from src.schemas.rates import (
     CurrencyRate,
     LatestRatesResponse,
@@ -210,6 +210,42 @@ async def get_bcc_rates(
         source='bcc',
         rates=formatted_rates,
         updated_at=updated_at or datetime.now(timezone.utc)
+    )
+
+
+@router.get("/fuel", response_model=SourceRatesResponse)
+async def get_fuel_rates(
+    db: AsyncSession = Depends(get_db),
+    max_age_minutes: int = Query(
+        default=60,
+        ge=1,
+        le=1440,
+        description="Máxima edad de datos en minutos (fallback a histórico)"
+    ),
+) -> SourceRatesResponse:
+    """
+    Obtiene los precios de combustible del mercado informal (ElToque).
+
+    Este endpoint es independiente del ciclo de ``rates_service``.
+    Hace scraping bajo demanda y persiste los resultados en la tabla
+    ``rate_snapshots`` con ``source='fuel'``.
+    """
+    rates, updated_at = await fuel_service.get_fuel_rates(db, max_age_minutes)
+
+    formatted_rates = {}
+    for currency, rate_info in rates.items():
+        formatted_rates[currency] = CurrencyRate(
+            rate=rate_info.get("rate", 0) or 0,
+            buy=rate_info.get("buy"),
+            sell=rate_info.get("sell"),
+            change=rate_info.get("change", "neutral"),
+            prev_rate=rate_info.get("prev_rate"),
+        )
+
+    return SourceRatesResponse(
+        source="fuel",
+        rates=formatted_rates,
+        updated_at=updated_at or datetime.now(timezone.utc),
     )
 
 
