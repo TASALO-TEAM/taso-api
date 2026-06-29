@@ -43,7 +43,7 @@ _BROWSER_HEADERS = {
     ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br",
+    "Accept-Encoding": "identity",   # sin compresión — evita truncamiento en uvicorn
     "Cache-Control": "no-cache",
     "Pragma": "no-cache",
     "Sec-Fetch-Dest": "document",
@@ -124,9 +124,15 @@ async def _fetch_html(timeout: float) -> Optional[str]:
             follow_redirects=True,
         ) as client:
             resp = await client.get(ELTOQUE_URL, headers=_BROWSER_HEADERS)
+            encoding = resp.headers.get("content-encoding", "none")
+            logger.info(
+                "🌐 [fuel] HTTP %d, size=%d bytes, encoding=%s",
+                resp.status_code, len(resp.content), encoding,
+            )
             if resp.status_code == 200:
-                logger.debug("✅ [fuel] HTML obtenido: %d bytes", len(resp.text))
-                return resp.text
+                html = resp.text
+                logger.debug("📄 [fuel] HTML text size: %d chars", len(html))
+                return html
             logger.warning("⚠️ [fuel] HTTP %d para %s", resp.status_code, ELTOQUE_URL)
             return None
     except httpx.TimeoutException:
