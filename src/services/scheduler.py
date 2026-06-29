@@ -131,14 +131,14 @@ async def init_image_capture_scheduler(
     scheduler.add_job(
         capture_eltoque_image_job,
         trigger="cron",
-        hour=6,
-        minute=0,
+        hour=11,
+        minute=30,
         timezone="UTC",
         id="eltoque_image_capture",
         name="Capture ElToque daily image",
         replace_existing=True,
     )
-    print("✅ [Scheduler] ElToque image capture job added (06:00 UTC)")
+    print("✅ [Scheduler] ElToque image capture job added (11:30 UTC = 7:30 AM Cuba)")
 
 
 async def init_year_scheduler(
