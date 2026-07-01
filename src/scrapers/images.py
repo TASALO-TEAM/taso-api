@@ -1,193 +1,107 @@
-"""Image scraper for capturing screenshots from web pages using Playwright and Selenium."""
+"""Scraper de la imagen del post de iframe.cubanomic.com.
 
-import asyncio
+Enfoque (2026-06-30): en vez de hacer screenshot de un elemento del DOM
+(#imgtasa, frágil por timing de render de la SPA Vue), se intercepta el
+evento de descarga que dispara el botón "Guardar POST". Ese botón genera
+la imagen real del post (vía canvas -> Blob) y el navegador emite un
+evento de descarga que Playwright puede capturar directamente con
+page.expect_download(), sin importar si es un <a download> o un Blob
+generado por JS.
+
+Ejecución: solo bajo petición (nunca en loop), resultado sobrescribe
+siempre el mismo archivo canónico en disco.
+"""
+
 import os
 import logging
 from pathlib import Path
-from typing import Dict, Optional
-from playwright.async_api import async_playwright, Error as PlaywrightError
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 
-# Check if selenium is available at module load time
-try:
-    from selenium import webdriver
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.chrome.options import Options
-    from selenium.common.exceptions import WebDriverException
-    SELENIUM_AVAILABLE = True
-except ImportError:
-    SELENIUM_AVAILABLE = False
+TARGET_URL = "https://iframe.cubanomic.com/"
+BUTTON_TEXT = "Guardar POST"
+
+# Timeout esperando que el botón esté visible (ms)
+BUTTON_WAIT_MS = 15000
+# Timeout esperando que se dispare el evento de descarga tras el clic (ms)
+DOWNLOAD_WAIT_MS = 20000
 
 
-async def capture_eltoque_image(
+async def download_eltoque_post_image(
     output_path: str,
-    timeout: int = 30000
+    timeout: int = 30000,
 ) -> Dict:
-    """
-    Captura screenshot de la imagen #imgtasa en iframe.cubanomic.com.
-    
+    """Descarga la imagen real del post haciendo clic en 'Guardar POST'.
+
+    Intercepta el evento de descarga del navegador con page.expect_download(),
+    que funciona tanto si el botón genera un <a download> como si dispara un
+    Blob (típico de apps que generan la imagen final vía canvas.toBlob()).
+
     Args:
-        output_path: Path donde guardar la imagen
-        timeout: Timeout en milisegnicos
-    
+        output_path: Path absoluto donde guardar la imagen (se sobrescribe
+            si ya existe).
+        timeout: Timeout total en milisegundos para navegación + descarga.
+
     Returns:
-        dict: {success: bool, width: int, height: int, file_size: int, error: Optional[str]}
+        dict con success, file_size, error
     """
     try:
-        # Intentar con Playwright primero
-        result = await _capture_with_playwright(output_path, timeout)
-        if result["success"]:
-            return result
-        
-        # Si falla, intentar con Selenium como fallback
-        logger.warning("⚠️ Playwright failed, trying Selenium fallback...")
-        result = await _capture_with_selenium(output_path, timeout)
-        if result["success"]:
-            return result
-            
-        return result
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        from playwright.async_api import async_playwright, Error as PlaywrightError
+    except ImportError:
+        return {"success": False, "error": "Playwright no instalado"}
 
-
-async def _capture_with_playwright(output_path: str, timeout: int) -> Dict:
-    """Capture image using Playwright."""
     try:
         async with async_playwright() as p:
-            # Intentar diferentes configuraciones
-            browser = None
-            for browser_type in ["chromium", "chromium-headless-shell"]:
-                try:
-                    bt = getattr(p, browser_type)
-                    browser = await bt.launch(headless=True)
-                    break
-                except PlaywrightError:
-                    continue
-            
-            if not browser:
-                return {"success": False, "error": "No Playwright browser available"}
-                
-            page = await browser.new_page()
-            
-            # Navegar a la página
-            await page.goto(
-                "https://iframe.cubanomic.com/",
-                wait_until="networkidle",
-                timeout=timeout
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
             )
-            
-            # Esperar que la imagen esté visible
-            await page.wait_for_selector("#imgtasa", state="visible", timeout=5000)
-            
-            # Capturar solo la imagen
-            img_element = await page.query_selector("#imgtasa")
-            if not img_element:
-                return {
-                    "success": False,
-                    "error": "Image element #imgtasa not found"
-                }
-            
-            # Tomar screenshot
-            await img_element.screenshot(path=output_path)
-            
-            # Obtener metadata
-            box = await img_element.bounding_box()
-            file_size = os.path.getsize(output_path)
-            
-            await browser.close()
-            
-            return {
-                "success": True,
-                "width": int(box["width"]),
-                "height": int(box["height"]),
-                "file_size": file_size
-            }
-            
+            try:
+                page = await browser.new_page(
+                    viewport={"width": 1280, "height": 900},
+                    accept_downloads=True,
+                )
+
+                logger.debug("🌐 [download] Navegando a %s", TARGET_URL)
+                await page.goto(TARGET_URL, wait_until="networkidle", timeout=timeout)
+
+                button = page.get_by_role("button", name=BUTTON_TEXT)
+                try:
+                    await button.wait_for(state="visible", timeout=BUTTON_WAIT_MS)
+                except PlaywrightError:
+                    return {
+                        "success": False,
+                        "error": f"Botón '{BUTTON_TEXT}' no visible tras {BUTTON_WAIT_MS}ms",
+                    }
+
+                logger.debug("🖱️ [download] Click en '%s', esperando descarga...", BUTTON_TEXT)
+                try:
+                    async with page.expect_download(timeout=DOWNLOAD_WAIT_MS) as download_info:
+                        await button.click()
+                    download = await download_info.value
+                except PlaywrightError as e:
+                    return {
+                        "success": False,
+                        "error": f"No se disparó descarga tras el clic: {e}",
+                    }
+
+                await download.save_as(output_path)
+                file_size = os.path.getsize(output_path)
+
+                logger.info(
+                    "✅ [download] Imagen descargada: %s (%d bytes)",
+                    output_path, file_size,
+                )
+                return {"success": True, "file_size": file_size}
+
+            finally:
+                await browser.close()
+
     except PlaywrightError as e:
         return {"success": False, "error": f"Playwright error: {e}"}
     except Exception as e:
         return {"success": False, "error": str(e)}
-
-
-async def _capture_with_selenium(output_path: str, timeout: int) -> Dict:
-    """Capture image using Selenium as fallback."""
-    if not SELENIUM_AVAILABLE:
-        return {
-            "success": False,
-            "error": "Selenium not installed. Run: pip install selenium"
-        }
-    
-    def _capture_sync():
-        """Synchronous capture running in thread pool."""
-        try:
-            from selenium import webdriver
-            from selenium.webdriver.common.by import By
-            from selenium.webdriver.support.ui import WebDriverWait
-            from selenium.webdriver.support import expected_conditions as EC
-            from selenium.webdriver.chrome.options import Options
-            from selenium.webdriver.chrome.service import Service
-            from selenium.common.exceptions import WebDriverException
-
-            # Configure headless Chrome
-            chrome_options = Options()
-            chrome_options.add_argument("--headless=new")
-            chrome_options.add_argument("--no-sandbox")
-            chrome_options.add_argument("--disable-dev-shm-usage")
-            chrome_options.add_argument("--window-size=1920,1080")
-            chrome_options.add_argument("--disable-gpu")
-            chrome_options.add_argument("--disable-extensions")
-
-            # Use Selenium Manager (built into Selenium 4.6+) to auto-detect
-            # and download the correct ChromeDriver version for the installed browser.
-            # No need for webdriver-manager dependency.
-            service = Service()  # Selenium Manager auto-resolves driver
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            
-            try:
-                driver.set_page_load_timeout(timeout // 1000)
-                driver.get("https://iframe.cubanomic.com/")
-                
-                # Wait for image to load
-                wait = WebDriverWait(driver, timeout // 1000)
-                img_element = wait.until(
-                    EC.presence_of_element_located((By.ID, "imgtasa"))
-                )
-                
-                # Capture screenshot
-                img_element.screenshot(output_path)
-                
-                file_size = os.path.getsize(output_path)
-                
-                return {
-                    "success": True,
-                    "width": 800,
-                    "height": 600,
-                    "file_size": file_size
-                }
-            finally:
-                driver.quit()
-                
-        except WebDriverException as e:
-            return {"success": False, "error": f"Selenium WebDriver error: {e}"}
-        except Exception as e:
-            return {"success": False, "error": f"Selenium error: {e}"}
-    
-    try:
-        # Run blocking Selenium code in thread pool to avoid blocking event loop
-        result = await asyncio.to_thread(_capture_sync)
-        return result
-    except Exception as e:
-        return {
-            "success": False,
-            "error": f"Thread execution error: {str(e)}"
-        }
 
 
 async def ensure_directory_exists(output_path: str) -> None:

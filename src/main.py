@@ -18,7 +18,7 @@ from src.routers import rates as rates_router
 from src.routers import admin as admin_router
 from src.routers import stats as stats_router
 from src.routers import images as images_router
-from src.services.scheduler import create_scheduler, init_scheduler_status, init_cubanomic_scheduler, init_image_capture_scheduler, init_year_scheduler
+from src.services.scheduler import create_scheduler, init_scheduler_status, init_cubanomic_scheduler, init_year_scheduler
 from src.routers import year as year_router
 from src.routers import alerts as alerts_router
 
@@ -69,9 +69,6 @@ async def lifespan(app: FastAPI):
     
     # Inicializar job de Cubanomic
     await init_cubanomic_scheduler(scheduler, database.async_session_factory)
-    
-    # Inicializar job de captura de imagen de ElToque
-    await init_image_capture_scheduler(scheduler, database.async_session_factory)
 
     # Year daily alert scheduler
     try:

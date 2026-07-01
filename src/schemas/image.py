@@ -85,3 +85,4 @@ class APIResponse(BaseModel):
     data: Optional[Any] = None
     error: Optional[Dict[str, Any]] = None
     count: Optional[int] = None
+    stale: Optional[bool] = None

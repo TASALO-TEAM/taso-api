@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import get_settings
 from src.models.scheduler_status import SchedulerStatus
 from src.services.rates_service import fetch_all_sources, save_snapshot, save_history_snapshot
-from src.services.image_capture import capture_and_store_image
 
 logger = logging.getLogger(__name__)
 
@@ -108,37 +107,6 @@ async def init_cubanomic_scheduler(
         replace_existing=True,
     )
     print("✅ [Scheduler] Cubanomic daily job added (00:01 UTC)")
-
-
-async def init_image_capture_scheduler(
-    scheduler: AsyncIOScheduler,
-    db_factory: Callable[[], AsyncSession]
-) -> None:
-    """Initialize ElToque image capture job at 06:00 UTC."""
-
-    async def capture_eltoque_image_job() -> None:
-        db = db_factory()
-        try:
-            async with db:
-                result = await capture_and_store_image(db, source="eltoque")
-                if result.get("success"):
-                    logger.info(f"📸 ElToque image captured: {result.get('image')}")
-                else:
-                    logger.error(f"❌ ElToque image capture failed: {result.get('error')}")
-        except Exception as e:
-            logger.error(f"❌ ElToque image capture failed: {e}")
-
-    scheduler.add_job(
-        capture_eltoque_image_job,
-        trigger="cron",
-        hour=11,
-        minute=30,
-        timezone="UTC",
-        id="eltoque_image_capture",
-        name="Capture ElToque daily image",
-        replace_existing=True,
-    )
-    print("✅ [Scheduler] ElToque image capture job added (11:30 UTC = 7:30 AM Cuba)")
 
 
 async def init_year_scheduler(

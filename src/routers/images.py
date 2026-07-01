@@ -1,17 +1,15 @@
 """Router for image endpoints."""
 
-import json
 import logging
 import os
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 from src.database import get_db
-from src.services.image_capture import capture_and_store_image, get_latest_image, get_image_by_date, get_today_image
+from src.services.image_capture import capture_and_store_image, get_latest_image
 from src.services.image_alert_service import (
     get_user_alert,
     create_update_alert,
@@ -31,16 +29,16 @@ router = APIRouter(prefix="/api/v1/images", tags=["Images"])
 
 @router.post("/eltoque/capture", response_model=APIResponse)
 async def capture_eltoque_image_endpoint(
-    force: bool = Query(False, description="Forzar regeneración aunque ya exista imagen de hoy"),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Capturar/generar imagen de ElToque.
+    Refrescar la imagen del post de ElToque bajo demanda.
 
-    Si ya existe imagen de hoy, devuelve la existente sin generar nada (force=false).
-    Con force=true regenera aunque ya exista.
+    Siempre intenta una descarga fresca (clic en 'Guardar POST' en
+    iframe.cubanomic.com). Si la descarga falla, devuelve la imagen local
+    existente marcada como 'stale' en lugar de fallar.
     """
-    result = await capture_and_store_image(db, source="eltoque", force=force)
+    result = await capture_and_store_image(db, source="eltoque")
 
     if not result["success"]:
         error_msg = result.get("error", "Unknown error")
@@ -49,11 +47,12 @@ async def capture_eltoque_image_endpoint(
             ok=False,
             error={"code": 500, "message": error_msg, "path": "/api/v1/images/eltoque/capture"}
         )
-    
+
     return APIResponse(
         ok=True,
         data=ImageSnapshotSchema.model_validate(result["image"]),
-        count=1
+        count=1,
+        stale=result.get("stale", False)
     )
 
 
@@ -76,50 +75,6 @@ async def get_latest_eltoque_image(
     )
 
 
-@router.get("/eltoque/today", response_model=APIResponse)
-async def get_today_eltoque_image(
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Obtener imagen de ElToque capturada HOY.
-    Útil para verificar si se capturó la imagen del día actual.
-    """
-    image = await get_today_image(db, source="eltoque")
-    
-    if not image:
-        return APIResponse(
-            ok=True,
-            data=None,
-            count=0
-        )
-    
-    return APIResponse(
-        ok=True,
-        data=ImageSnapshotSchema.model_validate(image),
-        count=1
-    )
-
-
-@router.get("/eltoque/{date}", response_model=APIResponse)
-async def get_eltoque_image_by_date(
-    date: str,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Obtener imagen de ElToque por fecha (YYYY-MM-DD).
-    """
-    image = await get_image_by_date(db, source="eltoque", date=date)
-    
-    if not image:
-        raise HTTPException(status_code=404, detail=f"No image found for date {date}")
-    
-    return APIResponse(
-        ok=True,
-        data=ImageSnapshotSchema.model_validate(image),
-        count=1
-    )
-
-
 @router.get("/eltoque/file/latest")
 async def get_latest_eltoque_file(
     db: AsyncSession = Depends(get_db)
@@ -134,7 +89,7 @@ async def get_latest_eltoque_file(
     
     return FileResponse(
         image.image_path,
-        media_type="image/jpeg",
+        media_type="image/png",
         filename=os.path.basename(image.image_path)
     )
 
