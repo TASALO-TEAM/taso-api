@@ -168,11 +168,10 @@ Use the GitHub Issue template and include:
    source .venv/bin/activate  # Linux/Mac
    ```
 
-3. **Install dependencies:**
+3. **Install dependencies** (incluye pytest/pytest-asyncio/pytest-cov como dev-dependencies de uv):
    ```bash
-   uv pip install -r requirements.txt
-   uv pip install pytest pytest-asyncio pytest-cov  # Testing
-   uv pip install ruff black mypy  # Linting
+   uv sync
+   uv pip install ruff black mypy  # Linting (no son dev-dependencies de uv)
    ```
 
 4. **Configure environment:**
