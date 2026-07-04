@@ -21,16 +21,13 @@ from src.routers import images as images_router
 from src.services.scheduler import create_scheduler, init_scheduler_status, init_cubanomic_scheduler, init_year_scheduler
 from src.routers import year as year_router
 from src.routers import alerts as alerts_router
+from src.logging_config import setup_logging
 
 settings = get_settings()
 
-# Configurar logging estructurado
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
+# Configurar logging estructurado (consola + archivo rotado con archivado por
+# fecha, ver src/logging_config.py). No crea archivos cuando corre bajo pytest.
+setup_logging(level=logging.INFO)
 
 logger = logging.getLogger(__name__)
 
