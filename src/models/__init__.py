@@ -8,9 +8,11 @@ from src.models.image_alert import UserImageAlert
 from src.models.year_quote import YearQuote
 from src.models.year_subscription import YearSubscription
 from src.models.year_extra_flag import YearExtraFlag
+from src.models.ad import Ad
 
 __all__ = [
     "RateSnapshot", "SchedulerStatus", "CubanomicRate",
     "ImageSnapshot", "UserImageAlert",
     "YearQuote", "YearSubscription", "YearExtraFlag",
+    "Ad",
 ]
