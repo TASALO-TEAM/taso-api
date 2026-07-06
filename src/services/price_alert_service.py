@@ -19,6 +19,7 @@ async def create_alert(
     target_price: float,
     condition: str,
     price_at_creation: float,
+    note: Optional[str] = None,
 ) -> Optional[PriceAlert]:
     """
     Crea una alerta de precio individual (ABOVE o BELOW).
@@ -31,6 +32,8 @@ async def create_alert(
         condition: "ABOVE" o "BELOW"
         price_at_creation: Precio real de la moneda en el momento de crear la alerta.
             Usado por el checker para detectar cruces reales y evitar falsos positivos.
+        note: Origen opcional de la alerta (ej: "S1 · Análisis 4h"), cuando se creó
+            desde un botón de nivel en /graf o /ta. None si se creó manualmente.
 
     Returns:
         PriceAlert creada o None si hubo error
@@ -42,6 +45,7 @@ async def create_alert(
         price_at_creation=price_at_creation,
         condition=condition,
         status="ACTIVE",
+        note=note,
     )
     try:
         db.add(alert)

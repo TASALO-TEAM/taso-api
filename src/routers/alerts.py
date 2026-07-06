@@ -109,6 +109,8 @@ async def create_alert_endpoint(
         user_id: Telegram user_id
         coin: Símbolo (ej: "BTC")
         target_price: Precio objetivo (debe ser > 0)
+        note: Origen opcional (ej: "S1 · Análisis 4h"), cuando la alerta se crea
+            desde un botón de nivel en /graf o /ta
     """
     created = []
     for condition in ("ABOVE", "BELOW"):
@@ -119,6 +121,7 @@ async def create_alert_endpoint(
             target_price=body.target_price,
             condition=condition,
             price_at_creation=body.price_at_creation,
+            note=body.note,
         )
         if alert:
             created.append(PriceAlertSchema.model_validate(alert))

@@ -18,6 +18,7 @@ class PriceAlert(Base):
     price_at_creation = Column(Float, nullable=True)            # precio real al momento de crear la alerta
     condition = Column(String(10), nullable=False)              # "ABOVE" | "BELOW"
     status = Column(String(10), nullable=False, default="ACTIVE")  # "ACTIVE" | "TRIGGERED"
+    note = Column(String(120), nullable=True)                   # ej: "S1 · Análisis 4h"
     created_at = Column(
         DateTime(timezone=True),
         nullable=False,

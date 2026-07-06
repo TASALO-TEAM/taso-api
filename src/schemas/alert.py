@@ -15,6 +15,7 @@ class PriceAlertSchema(BaseModel):
     price_at_creation: Optional[float] = None   # precio real al momento de crear
     condition: str   # "ABOVE" | "BELOW"
     status: str      # "ACTIVE" | "TRIGGERED"
+    note: Optional[str] = None   # origen, ej: "S1 · Análisis 4h" (None si se creó manual)
     created_at: datetime
     updated_at: Optional[datetime] = None
     triggered_at: Optional[datetime] = None
@@ -33,6 +34,7 @@ class AlertCreateSchema(BaseModel):
     coin: str = Field(..., min_length=2, max_length=20)
     target_price: float = Field(..., gt=0)
     price_at_creation: float = Field(..., gt=0)   # precio real al momento de crear
+    note: Optional[str] = Field(None, max_length=120)  # origen, ej: "S1 · Análisis 4h"
 
     @field_validator("coin")
     @classmethod
