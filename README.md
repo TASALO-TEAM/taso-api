@@ -26,6 +26,7 @@
 
 - [Features](#-features)
 - [Quick Start](#-quick-start)
+- [Public API (Hosted)](#-public-api-hosted)
 - [API Reference](#-api-reference)
 - [Code Examples](#-code-examples)
 - [Installation](#-installation)
@@ -100,6 +101,20 @@ curl http://localhost:8040/api/v1/health
 ```
 
 📚 **Interactive API docs:** http://localhost:8040/docs
+
+---
+
+## 🌐 Public API (Hosted)
+
+**You don't need to install or run this project to consume the data.** TASALO API is already deployed and publicly accessible — no API key required for read endpoints, CORS is open, and it updates every 5 minutes.
+
+```
+http://tasalo.duckdns.org:8040
+```
+
+The sections below (`API Reference`, `Code Examples`, `Installation`...) document this same codebase, but are written from the perspective of running your **own** instance (`localhost:8040`). If you just want to consume the already-deployed API from a bot, browser extension, dashboard, or app, see the dedicated consumer guide instead:
+
+📄 **[docs/PUBLIC_API.md](docs/PUBLIC_API.md)** — full endpoint reference, response formats, and code examples (Python, JS, cURL, PHP) against the hosted URL.
 
 ---
 
