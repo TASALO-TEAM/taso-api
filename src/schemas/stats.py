@@ -75,3 +75,15 @@ class TrackCommandResponse(BaseModel):
 
     ok: bool = Field(True, description="Estado de la respuesta")
     message: str = Field("Comando trackeado", description="Mensaje de confirmación")
+
+
+class UserIdsResponse(BaseModel):
+    """Lista de todos los user_id registrados en bot_users.
+
+    Endpoint admin-only (require_auth vía X-API-Key, ver src/routers/stats.py).
+    Usado por taso-bot para el comando /ms (broadcast a todos los usuarios).
+    No exponer nunca sin autenticación: es información de usuarios reales.
+    """
+
+    ok: bool = Field(True, description="Estado de la respuesta")
+    data: list[int] = Field(default_factory=list, description="Lista de user_id (Telegram)")

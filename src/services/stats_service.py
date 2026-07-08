@@ -103,6 +103,22 @@ async def get_user_stats(session: AsyncSession) -> BotUserStats:
     )
 
 
+async def get_all_user_ids(session: AsyncSession) -> list[int]:
+    """
+    Obtiene el user_id de TODOS los usuarios registrados en bot_users.
+
+    Uso: comando /ms (broadcast) en taso-bot, vía endpoint admin-only
+    GET /api/v1/admin/stats/users/ids. No usar para nada que no sea
+    envío masivo desde el propio bot con la admin_key configurada.
+
+    Returns:
+        Lista de user_id (int), sin orden garantizado.
+    """
+    stmt = select(BotUser.user_id)
+    result = await session.execute(stmt)
+    return [row[0] for row in result.all()]
+
+
 async def get_command_usage_stats(session: AsyncSession) -> CommandUsageStats:
     """
     Obtiene estadísticas de uso de comandos.

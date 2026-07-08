@@ -11,6 +11,7 @@ from src.schemas.stats import (
     BotStatsSummary,
     TrackCommandRequest,
     TrackCommandResponse,
+    UserIdsResponse,
 )
 from src.services import stats_service
 
@@ -85,3 +86,29 @@ async def get_stats_summary(
         performance=performance,
         updated_at=datetime.now(timezone.utc),
     )
+
+
+@router.get("/users/ids", response_model=UserIdsResponse)
+async def get_all_user_ids(
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(require_auth),
+) -> UserIdsResponse:
+    """
+    Lista el user_id de TODOS los usuarios registrados del bot.
+
+    Endpoint admin-only (require_auth vía X-API-Key, igual que el resto
+    de /api/v1/admin/*). NO es un endpoint público — no exponer nunca
+    sin autenticación, es información de usuarios reales.
+
+    Uso exclusivo: taso-bot, comando /ms (broadcast a todos los
+    usuarios). Ver docs/plans/2026-07-07-comando-ms-broadcast.md.
+
+    Args:
+        db: Database session
+        api_key: API key de autenticación (admin)
+
+    Returns:
+        UserIdsResponse: lista de user_id (Telegram)
+    """
+    user_ids = await stats_service.get_all_user_ids(db)
+    return UserIdsResponse(ok=True, data=user_ids)
