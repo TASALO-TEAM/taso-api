@@ -9,10 +9,11 @@ from src.models.year_quote import YearQuote
 from src.models.year_subscription import YearSubscription
 from src.models.year_extra_flag import YearExtraFlag
 from src.models.ad import Ad
+from src.models.ticket import Ticket
 
 __all__ = [
     "RateSnapshot", "SchedulerStatus", "CubanomicRate",
     "ImageSnapshot", "UserImageAlert",
     "YearQuote", "YearSubscription", "YearExtraFlag",
-    "Ad",
+    "Ad", "Ticket",
 ]
