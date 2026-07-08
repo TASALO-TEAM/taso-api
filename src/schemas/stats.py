@@ -87,3 +87,21 @@ class UserIdsResponse(BaseModel):
 
     ok: bool = Field(True, description="Estado de la respuesta")
     data: list[int] = Field(default_factory=list, description="Lista de user_id (Telegram)")
+
+
+class UserLookupData(BaseModel):
+    """Resultado de la búsqueda de un usuario por username."""
+
+    user_id: int = Field(..., description="ID del usuario (Telegram)")
+
+
+class UserLookupResponse(BaseModel):
+    """Resultado de GET /users/lookup?username=....
+
+    Endpoint admin-only (ver src/routers/stats.py). Usado por taso-bot
+    para el comando /ms <@usuario> (mensaje a un único usuario).
+    `data` es None si el username no está registrado en bot_users.
+    """
+
+    ok: bool = Field(True, description="Estado de la respuesta")
+    data: Optional[UserLookupData] = Field(None, description="Datos del usuario encontrado, o None")

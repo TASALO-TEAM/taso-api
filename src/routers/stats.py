@@ -1,7 +1,7 @@
 """Router para endpoints de estadísticas del bot."""
 
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,8 @@ from src.schemas.stats import (
     TrackCommandRequest,
     TrackCommandResponse,
     UserIdsResponse,
+    UserLookupData,
+    UserLookupResponse,
 )
 from src.services import stats_service
 
@@ -112,3 +114,35 @@ async def get_all_user_ids(
     """
     user_ids = await stats_service.get_all_user_ids(db)
     return UserIdsResponse(ok=True, data=user_ids)
+
+
+@router.get("/users/lookup", response_model=UserLookupResponse)
+async def lookup_user_by_username(
+    username: str = Query(..., min_length=1, description="Username a buscar, con o sin @"),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(require_auth),
+) -> UserLookupResponse:
+    """
+    Busca el user_id de un usuario registrado a partir de su username.
+
+    Endpoint admin-only (require_auth vía X-API-Key, igual que el resto
+    de /api/v1/admin/*). Uso exclusivo: taso-bot, comando /ms <@usuario>
+    (mensaje a un único usuario en vez de broadcast). Ver
+    docs/plans/2026-07-08-ms-directo-y-tkt-mejoras.md.
+
+    `data` es None si no hay ningún usuario registrado con ese username
+    (nunca ejecutó ningún comando del bot, o cambió de username desde
+    la última vez que lo hizo).
+
+    Args:
+        username: username a buscar (con o sin "@" inicial)
+        db: Database session
+        api_key: API key de autenticación (admin)
+
+    Returns:
+        UserLookupResponse: user_id encontrado, o data=None
+    """
+    user_id = await stats_service.get_user_id_by_username(db, username)
+    if user_id is None:
+        return UserLookupResponse(ok=True, data=None)
+    return UserLookupResponse(ok=True, data=UserLookupData(user_id=user_id))

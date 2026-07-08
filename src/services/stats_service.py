@@ -119,6 +119,37 @@ async def get_all_user_ids(session: AsyncSession) -> list[int]:
     return [row[0] for row in result.all()]
 
 
+async def get_user_id_by_username(session: AsyncSession, username: str) -> Optional[int]:
+    """
+    Busca el user_id de un usuario registrado a partir de su username.
+
+    Uso: comando /ms <@usuario> en taso-bot, para enviar un mensaje a un
+    único usuario en vez de a todos. Comparación case-insensitive y
+    tolerante a que el username venga con o sin "@" al inicio.
+
+    Nota: bot_users.username se actualiza en cada track_command, así que
+    puede estar desactualizado si el usuario cambió su username y no
+    volvió a interactuar con el bot desde entonces.
+
+    Args:
+        session: SQLAlchemy async session
+        username: Username a buscar (con o sin "@" inicial)
+
+    Returns:
+        user_id (int) si se encuentra, None si no hay match.
+    """
+    clean_username = username.lstrip("@").strip().lower()
+    if not clean_username:
+        return None
+
+    stmt = select(BotUser.user_id).where(
+        func.lower(BotUser.username) == clean_username
+    )
+    result = await session.execute(stmt)
+    row = result.first()
+    return row[0] if row else None
+
+
 async def get_command_usage_stats(session: AsyncSession) -> CommandUsageStats:
     """
     Obtiene estadísticas de uso de comandos.
