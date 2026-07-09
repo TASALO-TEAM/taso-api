@@ -53,11 +53,14 @@ async def list_tickets(
     db: AsyncSession,
     status: Optional[str] = None,
     kind: Optional[str] = None,
+    limit: Optional[int] = None,
 ) -> List[Ticket]:
     """Lista tickets, opcionalmente filtrados por status y/o kind.
 
-    Orden: más recientes primero (created_at desc), para que /tkts
-    en el bot muestre lo más urgente arriba.
+    Orden: mas recientes primero (created_at desc). `limit` acota la
+    cantidad devuelta - usado por /tkt list en taso-bot para no exceder
+    el limite de 4096 caracteres de un mensaje de Telegram a medida que
+    se acumulan tickets con el tiempo.
     """
     stmt = select(Ticket)
     if status is not None:
@@ -65,6 +68,8 @@ async def list_tickets(
     if kind is not None:
         stmt = stmt.where(Ticket.kind == kind)
     stmt = stmt.order_by(Ticket.created_at.desc())
+    if limit is not None:
+        stmt = stmt.limit(limit)
     try:
         result = await db.execute(stmt)
         return list(result.scalars().all())

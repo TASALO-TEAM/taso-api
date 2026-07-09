@@ -5,7 +5,10 @@ from typing import Optional
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 TICKET_KINDS = {"bug", "promo"}
-TICKET_STATUSES = {"open", "in_progress", "resolved", "closed"}
+# "approved"/"rejected" son exclusivos de tickets kind="promo" (ver
+# docs/plans/2026-07-08-ms-directo-y-tkt-mejoras.md, Parte 4): un anuncio se
+# aprueba o rechaza directamente en vez de pasar por in_progress/resolved.
+TICKET_STATUSES = {"open", "in_progress", "resolved", "closed", "approved", "rejected"}
 
 
 class TicketSchema(BaseModel):

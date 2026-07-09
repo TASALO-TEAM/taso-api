@@ -54,15 +54,28 @@ async def create_ticket_endpoint(
 async def list_tickets_endpoint(
     status: Optional[str] = Query(default=None),
     kind: Optional[str] = Query(default=None),
+    limit: Optional[int] = Query(default=None, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
-    """Lista tickets, filtrables por status y/o kind. Uso: /tkts en taso-bot."""
-    tickets = await ticket_service.list_tickets(db, status=status, kind=kind)
+    """Lista tickets, filtrables por status y/o kind. Uso: /tkt list y /tkt active en taso-bot."""
+    tickets = await ticket_service.list_tickets(db, status=status, kind=kind, limit=limit)
     return TicketAPIResponse(
         ok=True,
         data=[TicketSchema.model_validate(t) for t in tickets],
         count=len(tickets),
     )
+
+
+@router.get("/{ticket_id}", response_model=TicketAPIResponse)
+async def get_ticket_endpoint(
+    ticket_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Obtiene un ticket puntual por id. Uso: /tkt show <id> en taso-bot."""
+    ticket = await ticket_service.get_ticket(db, ticket_id=ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado")
+    return TicketAPIResponse(ok=True, data=TicketSchema.model_validate(ticket), count=1)
 
 
 @router.patch("/{ticket_id}", response_model=TicketAPIResponse)
