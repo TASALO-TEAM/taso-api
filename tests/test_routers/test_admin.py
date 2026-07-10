@@ -114,17 +114,31 @@ class TestAdminStatusEndpoint:
         client: TestClient,
         valid_auth_headers: dict
     ):
-        """Status con auth válida debe retornar información del scheduler."""
+        """Status con auth válida debe retornar la lista de jobs del scheduler.
+
+        Desde Fase 2 (docs/plans/2026-07-08-status-command-v2.md) el shape
+        cambió de {scheduler: {...}} (solo refresh_all) a {is_scheduler_running,
+        jobs: [...]} (todos los jobs de APScheduler).
+        """
         response = client.get("/api/v1/admin/status", headers=valid_auth_headers)
-        
+
         # Verificar estructura de respuesta
         assert response.status_code == 200
         data = response.json()
         assert "ok" in data
-        assert "scheduler" in data
+        assert "is_scheduler_running" in data
+        assert "jobs" in data
         assert "updated_at" in data
-        
-        # Verificar campos del scheduler
-        scheduler = data["scheduler"]
-        assert "error_count" in scheduler
-        assert "updated_at" in scheduler
+        assert isinstance(data["jobs"], list)
+
+        # refresh_all siempre debe estar registrado (job base del scheduler)
+        job_ids = [job["id"] for job in data["jobs"]]
+        assert "refresh_all" in job_ids
+
+        # Cada job debe traer al menos id/name/next_run_at y los campos de
+        # tracking (con default 0/None para jobs sin historial persistido)
+        for job in data["jobs"]:
+            assert "id" in job
+            assert "name" in job
+            assert "next_run_at" in job
+            assert "error_count" in job

@@ -1,6 +1,7 @@
 """Router para endpoints de estadísticas del bot."""
 
 from datetime import datetime, timezone
+from typing import Literal
 from fastapi import APIRouter, Depends, Query, Request
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,7 @@ from src.schemas.stats import (
     UserIdsResponse,
     UserLookupData,
     UserLookupResponse,
+    ApiUsageStats,
 )
 from src.services import stats_service
 
@@ -88,6 +90,34 @@ async def get_stats_summary(
         performance=performance,
         updated_at=datetime.now(timezone.utc),
     )
+
+
+@router.get("/api-usage", response_model=ApiUsageStats)
+async def get_api_usage(
+    window: Literal["24h", "7d", "30d"] = Query(
+        default="24h", description="Ventana de tiempo a consultar",
+    ),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(require_auth),
+) -> ApiUsageStats:
+    """
+    Obtiene el uso de la API pública desglosado por cliente y por endpoint.
+
+    Fuente: api_request_log, poblada por el middleware track_requests
+    (src/main.py) para *toda* request HTTP a la API — no solo lo que
+    taso-bot reporta manualmente vía /admin/stats/track. Da visibilidad
+    sobre taso-app, taso-ext y taso-extmf. Ver
+    docs/plans/2026-07-08-status-command-v2.md (Fase 1).
+
+    Args:
+        window: "24h" (default), "7d" o "30d"
+        db: Database session
+        api_key: API key de autenticación
+
+    Returns:
+        ApiUsageStats: totales, desglose por cliente y top 10 endpoints
+    """
+    return await stats_service.get_api_usage_stats(db, window=window)
 
 
 @router.get("/users/ids", response_model=UserIdsResponse)

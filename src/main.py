@@ -1,7 +1,10 @@
 """TASALO API - Aplicación principal FastAPI."""
 
+import asyncio
 import logging
+import subprocess
 import sys
+import time
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -32,6 +35,73 @@ settings = get_settings()
 setup_logging(level=logging.INFO)
 
 logger = logging.getLogger(__name__)
+
+API_VERSION = "1.5.0"
+
+
+def _get_git_build_info() -> dict[str, str]:
+    """Lee commit corto + fecha del último commit una sola vez al arrancar.
+
+    Usado por /health y por /status (taso-bot) para mostrar qué versión
+    está corriendo en el VPS sin depender de recordar hacer un bump
+    manual. Fallback a "unknown" si no hay .git (ej. tarball) o falla git.
+    """
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=3, check=True,
+        ).stdout.strip()
+        commit_date = subprocess.run(
+            ["git", "log", "-1", "--format=%cd", "--date=short"],
+            capture_output=True, text=True, timeout=3, check=True,
+        ).stdout.strip()
+        return {"commit": commit or "unknown", "commit_date": commit_date or "unknown"}
+    except Exception as e:
+        logger.warning("⚠️ No se pudo leer info de git (%s) — usando 'unknown'", e)
+        return {"commit": "unknown", "commit_date": "unknown"}
+
+
+_GIT_BUILD_INFO = _get_git_build_info()
+
+
+# Clientes conocidos por substring de User-Agent, para inferir client_id
+# cuando la request no manda el header X-Client-Id explícito. taso-bot ya
+# manda su propio UA ("taso-bot/x.y.z") — ver api_client.py.
+_UA_CLIENT_HINTS: dict[str, str] = {
+    "taso-bot": "bot",
+    "taso-app": "app",
+    "taso-ext": "ext",
+    "taso-extmf": "extmf",
+}
+
+
+def _guess_client(user_agent: str) -> str:
+    """Infiere client_id desde el User-Agent cuando no viene X-Client-Id."""
+    ua_lower = (user_agent or "").lower()
+    for hint, client_id in _UA_CLIENT_HINTS.items():
+        if hint in ua_lower:
+            return client_id
+    return "unknown"
+
+
+# Paths excluidos del tracking de api_request_log (ruido, no aportan a las
+# estadísticas de uso público — ver docs/plans/2026-07-08-status-command-v2.md)
+_TRACKING_EXCLUDED_PATHS = {"/api/v1/health", "/docs", "/openapi.json", "/redoc"}
+_TRACKING_EXCLUDED_PREFIXES = ("/api/v1/admin/stats",)
+
+
+async def _log_request(method: str, path: str, status_code: int, duration_ms: int, client_id: str) -> None:
+    """Persiste una entrada de api_request_log. Fire-and-forget desde el middleware."""
+    from src.services import stats_service
+
+    try:
+        async with database.async_session_factory() as session:
+            await stats_service.log_api_request(
+                session, method=method, path=path,
+                status_code=status_code, duration_ms=duration_ms, client_id=client_id,
+            )
+    except Exception as e:
+        logger.debug("⚠️ No se pudo registrar api_request_log para %s %s: %s", method, path, e)
 
 
 @asynccontextmanager
@@ -108,7 +178,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="TASALO API",
     description="API para tasas de cambio en Cuba. Agrega datos de ElToque, CADECA, BCC y Binance.",
-    version="1.5.0",
+    version=API_VERSION,
     lifespan=lifespan,
 )
 
@@ -120,6 +190,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def track_requests(request: Request, call_next):
+    """Registra toda request HTTP en api_request_log (fire-and-forget).
+
+    Da visibilidad real sobre el uso de la API pública más allá de lo
+    que taso-bot reporta manualmente — incluye taso-app, taso-ext,
+    taso-extmf y cualquier otro consumidor. Ver
+    docs/plans/2026-07-08-status-command-v2.md (Fase 1).
+    """
+    start = time.time()
+    response = await call_next(request)
+    duration_ms = int((time.time() - start) * 1000)
+
+    path = request.url.path
+    if path not in _TRACKING_EXCLUDED_PATHS and not path.startswith(_TRACKING_EXCLUDED_PREFIXES):
+        client_id = request.headers.get("X-Client-Id") or _guess_client(request.headers.get("user-agent", ""))
+        asyncio.create_task(
+            _log_request(request.method, path, response.status_code, duration_ms, client_id)
+        )
+
+    return response
 
 # Registrar routers
 app.include_router(rates_router.router, prefix="/api/v1/tasas", tags=["Tasas"])
@@ -144,7 +237,9 @@ async def health_check():
     """
     return {
         "ok": True,
-        "version": "1.5.0",
+        "version": API_VERSION,
+        "git_commit": _GIT_BUILD_INFO["commit"],
+        "git_commit_date": _GIT_BUILD_INFO["commit_date"],
         "db": "connected" if app.state.db_connected else "disconnected",
         "database_url": settings.database_url.split("://")[0],  # Solo el tipo
     }

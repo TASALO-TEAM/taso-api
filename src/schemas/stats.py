@@ -11,6 +11,7 @@ class BotUserStats(BaseModel):
     total: int = Field(..., description="Total de usuarios únicos")
     new_7d: int = Field(..., description="Usuarios nuevos en los últimos 7 días")
     active_24h: int = Field(..., description="Usuarios activos en las últimas 24 horas")
+    active_recent: int = Field(0, description="Usuarios activos en los últimos 15 minutos")
 
 
 class CommandUsageItem(BaseModel):
@@ -25,6 +26,7 @@ class CommandUsageStats(BaseModel):
 
     commands_24h: list[CommandUsageItem] = Field(default_factory=list, description="Comandos usados en 24h")
     commands_7d: list[CommandUsageItem] = Field(default_factory=list, description="Comandos usados en 7d")
+    commands_30d: list[CommandUsageItem] = Field(default_factory=list, description="Comandos usados en 30d")
 
 
 class TopUserItem(BaseModel):
@@ -42,11 +44,49 @@ class TopUserStats(BaseModel):
 
 
 class ApiPerformanceStats(BaseModel):
-    """Estadísticas de rendimiento de la API."""
+    """Estadísticas de rendimiento de la API.
+
+    Nota: total_requests_24h/success_rate siguen calculándose a partir de
+    bot_command_stats (uso por comandos del bot). avg_response_ms ahora
+    sale de api_request_log (todas las requests HTTP reales, no solo las
+    reportadas por el bot) — ver get_api_performance_stats.
+    """
 
     success_rate: float = Field(..., description="Porcentaje de éxito (0-100)")
-    avg_response_ms: float = Field(..., description="Tiempo promedio de respuesta en ms")
+    avg_response_ms: float = Field(..., description="Tiempo promedio de respuesta en ms (últimas 24h, todas las fuentes)")
     total_requests_24h: int = Field(..., description="Total de requests en 24h")
+
+
+class ApiUsageByClient(BaseModel):
+    """Uso de la API desglosado por cliente (bot/app/ext/extmf/web/unknown)."""
+
+    client_id: str = Field(..., description="Identificador del cliente (header X-Client-Id o inferido)")
+    requests: int = Field(..., description="Total de requests en la ventana")
+    errors: int = Field(..., description="Requests con status_code >= 400")
+    avg_duration_ms: float = Field(..., description="Duración promedio en ms")
+
+
+class ApiUsageByEndpoint(BaseModel):
+    """Uso de la API desglosado por endpoint (path)."""
+
+    path: str = Field(..., description="Path del endpoint")
+    requests: int = Field(..., description="Total de requests en la ventana")
+    errors: int = Field(..., description="Requests con status_code >= 400")
+    avg_duration_ms: float = Field(..., description="Duración promedio en ms")
+
+
+class ApiUsageStats(BaseModel):
+    """Resumen de uso de la API pública (todas las fuentes), para /status."""
+
+    ok: bool = Field(True, description="Estado de la respuesta")
+    window: str = Field(..., description="Ventana consultada: 24h | 7d | 30d")
+    total_requests: int = Field(..., description="Total de requests en la ventana")
+    total_errors: int = Field(..., description="Total de requests con status_code >= 400")
+    error_rate: float = Field(..., description="Porcentaje de error (0-100)")
+    avg_duration_ms: float = Field(..., description="Duración promedio en ms")
+    by_client: list[ApiUsageByClient] = Field(default_factory=list, description="Desglose por cliente")
+    by_endpoint: list[ApiUsageByEndpoint] = Field(default_factory=list, description="Top endpoints por volumen")
+    updated_at: datetime = Field(..., description="Cuándo se generaron las estadísticas")
 
 
 class BotStatsSummary(BaseModel):

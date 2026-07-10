@@ -11,7 +11,7 @@ from src.middleware.auth import require_auth
 from src.models.scheduler_status import SchedulerStatus
 from src.services import rates_service
 from src.schemas.admin import (
-    SchedulerStatusResponse,
+    SchedulerJobInfo,
     AdminStatusResponse,
     RefreshResult,
     RefreshData,
@@ -86,43 +86,44 @@ async def get_scheduler_status(
     api_key: str = Depends(require_auth)
 ) -> AdminStatusResponse:
     """
-    Obtiene el estado actual del scheduler.
+    Obtiene el estado de TODOS los jobs registrados en el scheduler.
+
+    Antes solo exponía el job "refresh_all" (con envoltorio {scheduler:
+    {...}}); ahora lista cualquier job de APScheduler (cubanomic_daily,
+    year_daily_alert, etc.), agregando last_run/last_success/error_count/
+    last_error solo para "refresh_all", que es el único con tracking
+    persistido en la tabla scheduler_status. Ver
+    docs/plans/2026-07-08-status-command-v2.md (Fase 2).
 
     Returns:
-        AdminStatusResponse: Estado del scheduler con última ejecución y errores
+        AdminStatusResponse: is_scheduler_running + lista de jobs
     """
-    # Obtener scheduler del app.state para verificar si está corriendo
     scheduler = request.app.state.scheduler
-    is_running = scheduler.running if scheduler else False
-    
-    # Obtener el registro de estado del scheduler
+    is_scheduler_running = bool(scheduler and scheduler.running)
+
+    # Tracking persistido — hoy solo existe para "refresh_all"
     stmt = select(SchedulerStatus).order_by(SchedulerStatus.id.desc()).limit(1)
     result = await db.execute(stmt)
-    status = result.scalars().first()
+    refresh_status = result.scalars().first()
 
-    if status:
-        scheduler_status = SchedulerStatusResponse(
-            is_running=is_running,
-            last_run_at=status.last_run_at,
-            last_success_at=status.last_success_at,
-            error_count=status.error_count,
-            last_error=status.last_error,
-            updated_at=status.updated_at
+    jobs: list[SchedulerJobInfo] = []
+    apscheduler_jobs = scheduler.get_jobs() if scheduler else []
+    for job in apscheduler_jobs:
+        job_info = SchedulerJobInfo(
+            id=job.id,
+            name=job.name,
+            next_run_at=getattr(job, "next_run_time", None),
         )
-    else:
-        # No hay registros aún
-        now = datetime.now(timezone.utc)
-        scheduler_status = SchedulerStatusResponse(
-            is_running=is_running,
-            last_run_at=None,
-            last_success_at=None,
-            error_count=0,
-            last_error=None,
-            updated_at=now
-        )
+        if job.id == "refresh_all" and refresh_status:
+            job_info.last_run_at = refresh_status.last_run_at
+            job_info.last_success_at = refresh_status.last_success_at
+            job_info.error_count = refresh_status.error_count
+            job_info.last_error = refresh_status.last_error
+        jobs.append(job_info)
 
     return AdminStatusResponse(
         ok=True,
-        scheduler=scheduler_status,
-        updated_at=datetime.now(timezone.utc)
+        is_scheduler_running=is_scheduler_running,
+        jobs=jobs,
+        updated_at=datetime.now(timezone.utc),
     )

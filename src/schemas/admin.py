@@ -4,22 +4,32 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-class SchedulerStatusResponse(BaseModel):
-    """Estado del scheduler para respuesta de admin/status."""
+class SchedulerJobInfo(BaseModel):
+    """Estado de un job individual del scheduler (APScheduler)."""
 
-    is_running: bool = Field(False, description="Si el scheduler está corriendo actualmente")
-    last_run_at: datetime | None = Field(None, description="Última vez que se ejecutó el scheduler")
-    last_success_at: datetime | None = Field(None, description="Última vez que se ejecutó con éxito")
-    error_count: int = Field(0, description="Cantidad de errores consecutivos")
-    last_error: str | None = Field(None, description="Último error ocurrido")
-    updated_at: datetime = Field(..., description="Cuándo se actualizó este registro")
+    id: str = Field(..., description="Id del job (ej. 'refresh_all', 'cubanomic_daily')")
+    name: str = Field(..., description="Nombre descriptivo del job")
+    next_run_at: datetime | None = Field(None, description="Próxima ejecución programada (None si está pausado)")
+    # Los siguientes 4 campos solo se llenan para jobs con tracking persistido
+    # en scheduler_status (hoy: solo "refresh_all"). El resto de los jobs
+    # de APScheduler no tienen historial en DB — ver scheduler.py.
+    last_run_at: datetime | None = Field(None, description="Última ejecución (solo si hay tracking persistido)")
+    last_success_at: datetime | None = Field(None, description="Último éxito (solo si hay tracking persistido)")
+    error_count: int = Field(0, description="Errores consecutivos (solo si hay tracking persistido)")
+    last_error: str | None = Field(None, description="Último error (solo si hay tracking persistido)")
 
 
 class AdminStatusResponse(BaseModel):
-    """Respuesta para GET /api/v1/admin/status."""
+    """Respuesta para GET /api/v1/admin/status.
+
+    Lista TODOS los jobs registrados en el APScheduler del proceso, no
+    solo "refresh_all" (comportamiento anterior). Ver
+    docs/plans/2026-07-08-status-command-v2.md (Fase 2).
+    """
 
     ok: bool = Field(True, description="Estado de la respuesta")
-    scheduler: SchedulerStatusResponse = Field(..., description="Estado del scheduler")
+    is_scheduler_running: bool = Field(..., description="Si el scheduler global está corriendo")
+    jobs: list[SchedulerJobInfo] = Field(default_factory=list, description="Todos los jobs registrados")
     updated_at: datetime = Field(..., description="Cuándo se consultó el estado")
 
 

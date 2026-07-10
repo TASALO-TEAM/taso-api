@@ -10,10 +10,11 @@ from src.models.year_subscription import YearSubscription
 from src.models.year_extra_flag import YearExtraFlag
 from src.models.ad import Ad
 from src.models.ticket import Ticket
+from src.models.api_request_log import ApiRequestLog
 
 __all__ = [
     "RateSnapshot", "SchedulerStatus", "CubanomicRate",
     "ImageSnapshot", "UserImageAlert",
     "YearQuote", "YearSubscription", "YearExtraFlag",
-    "Ad", "Ticket",
+    "Ad", "Ticket", "ApiRequestLog",
 ]

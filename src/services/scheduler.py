@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import get_settings
 from src.models.scheduler_status import SchedulerStatus
 from src.services.rates_service import fetch_all_sources, save_snapshot, save_history_snapshot
+from src.services.stats_service import purge_old_api_request_logs
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +210,16 @@ async def refresh_all(db_factory: Callable) -> None:
                     await save_snapshot(session, source, data)
 
             await save_history_snapshot(session, results)
+
+            # Purga de api_request_log > 30 días. Se hace acá (no en un job
+            # aparte) para reusar el ciclo existente sin sumar otro cron —
+            # es una DELETE indexada, barata incluso corriendo cada 5 min.
+            try:
+                purged = await purge_old_api_request_logs(session)
+                if purged:
+                    logger.info("🧹 api_request_log: %d filas > 30 días purgadas", purged)
+            except Exception as e:
+                logger.warning("⚠️ No se pudo purgar api_request_log: %s", e)
 
             await _update_scheduler_status(
                 session,

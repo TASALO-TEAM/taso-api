@@ -11,7 +11,7 @@ from src.schemas.rates import (
 )
 
 from src.schemas.admin import (
-    SchedulerStatusResponse,
+    SchedulerJobInfo,
     AdminStatusResponse,
     RefreshResult,
     RefreshData,
@@ -26,7 +26,7 @@ __all__ = [
     "HistoryQueryParams",
     "HistorySnapshot",
     "HistoryResponse",
-    "SchedulerStatusResponse",
+    "SchedulerJobInfo",
     "AdminStatusResponse",
     "RefreshResult",
     "RefreshData",
