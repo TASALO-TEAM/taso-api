@@ -1,6 +1,6 @@
 # TASALO API
 
-[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)](https://github.com/tasalo/taso-api/releases)
+[![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)](https://github.com/tasalo/taso-api/releases)
 [![Python](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-green.svg)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -574,6 +574,7 @@ This project is licensed under the [MIT License](LICENSE).
 | [taso-bot](https://github.com/tasalo/taso-bot) | Telegram bot for rate alerts |
 | [taso-miniapp](https://github.com/tasalo/taso-miniapp) | Telegram Mini App UI |
 | [taso-extension](https://github.com/tasalo/taso-extension) | Browser extension |
+| [taso-gcg](https://github.com/TASALO-TEAM/taso-gcg) | Telegram bot: group/channel moderation + RSS |
 
 ---
 
