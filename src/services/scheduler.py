@@ -110,6 +110,50 @@ async def init_cubanomic_scheduler(
     print("✅ [Scheduler] Cubanomic daily job added (00:01 UTC)")
 
 
+async def init_image_capture_scheduler(
+    scheduler: AsyncIOScheduler,
+    db_factory: Callable[[], AsyncSession]
+) -> None:
+    """Captura diaria de la imagen de El Toque a las 7:05 hora de Cuba.
+
+    Cron de hora fija (timezone="America/Havana") — corre todos los días
+    pase lo que pase, independiente de si algún usuario usó /toqueimg. Usa
+    el mismo capture_and_store_image() que el endpoint on-demand: fila y
+    archivo únicos (upsert), sin historial por fecha.
+    """
+    from src.services.image_capture import capture_and_store_image
+
+    async def capture_eltoque_image_job() -> None:
+        db = db_factory()
+        try:
+            async with db:
+                result = await capture_and_store_image(db, source="eltoque")
+                if result.get("success"):
+                    logger.info(
+                        "📸 Captura diaria de ElToque OK (stale=%s)",
+                        result.get("stale", False),
+                    )
+                else:
+                    logger.error(
+                        "❌ Captura diaria de ElToque falló: %s",
+                        result.get("error"),
+                    )
+        except Exception:
+            logger.exception("❌ Captura diaria de ElToque falló")
+
+    scheduler.add_job(
+        capture_eltoque_image_job,
+        trigger="cron",
+        hour=7,
+        minute=5,
+        timezone="America/Havana",
+        id="eltoque_image_capture",
+        name="Captura diaria imagen ElToque (7:05 Cuba)",
+        replace_existing=True,
+    )
+    print("✅ [Scheduler] ElToque image capture job added (07:05 Cuba)")
+
+
 async def init_year_scheduler(
     scheduler: AsyncIOScheduler,
     db_factory: Callable[[], AsyncSession]
