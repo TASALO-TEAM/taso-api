@@ -26,6 +26,7 @@ from src.routers import year as year_router
 from src.routers import alerts as alerts_router
 from src.routers import ads as ads_router
 from src.routers import tickets as tickets_router
+from src.routers import tspl as tspl_router
 from src.logging_config import setup_logging
 
 settings = get_settings()
@@ -233,6 +234,7 @@ app.include_router(alerts_router.router, tags=["Price Alerts"])
 app.include_router(ads_router.router, prefix="/api/v1/ads", tags=["Ads"])
 app.include_router(ads_router.admin_router, prefix="/api/v1/ads", tags=["Ads Admin"])
 app.include_router(tickets_router.router, prefix="/api/v1/tickets", tags=["Tickets"])
+app.include_router(tspl_router.router, prefix="/api/v1/tspl", tags=["Tspl"])
 
 
 @app.get("/api/v1/health", tags=["Health"])

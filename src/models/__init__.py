@@ -11,10 +11,11 @@ from src.models.year_extra_flag import YearExtraFlag
 from src.models.ad import Ad
 from src.models.ticket import Ticket
 from src.models.api_request_log import ApiRequestLog
+from src.models.tspl_subscription import TsplSubscription
 
 __all__ = [
     "RateSnapshot", "SchedulerStatus", "CubanomicRate",
     "ImageSnapshot", "UserImageAlert",
     "YearQuote", "YearSubscription", "YearExtraFlag",
-    "Ad", "Ticket", "ApiRequestLog",
+    "Ad", "Ticket", "ApiRequestLog", "TsplSubscription",
 ]
