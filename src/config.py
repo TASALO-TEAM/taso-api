@@ -42,6 +42,21 @@ class Settings(BaseSettings):
         description="TTL for Cubanomic cache in seconds"
     )
 
+    # Avisos de arranque/apagado/errores al grupo de soporte (mismo grupo
+    # que ya usan taso-gcg y taso-bot). taso-api no tiene bot de Telegram
+    # propio, así que LOG_BOT_TOKEN reutiliza el token de taso-gcg (ya es
+    # admin de ese grupo) solo para mandar estos avisos vía sendMessage.
+    # Si cualquiera de las dos queda vacía, no se manda nada — el resto de
+    # la app sigue funcionando igual.
+    log_chat_id: str = Field(
+        default="",
+        description="Chat ID de Telegram donde se mandan avisos de arranque/errores",
+    )
+    log_bot_token: str = Field(
+        default="",
+        description="Token del bot (reutiliza el de taso-gcg) usado solo para mandar estos avisos",
+    )
+
     def model_post_init(self, __context) -> None:
         """Validar configuración después de inicializar."""
         if self.refresh_interval_minutes < 1:

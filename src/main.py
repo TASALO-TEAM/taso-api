@@ -28,6 +28,7 @@ from src.routers import ads as ads_router
 from src.routers import tickets as tickets_router
 from src.routers import tspl as tspl_router
 from src.logging_config import setup_logging
+from src.services.alert_notifier import notify as notify_support_group
 
 settings = get_settings()
 
@@ -37,7 +38,7 @@ setup_logging(level=logging.INFO)
 
 logger = logging.getLogger(__name__)
 
-API_VERSION = "1.5.0"
+API_VERSION = "1.6.0"
 
 
 def _get_git_build_info() -> dict[str, str]:
@@ -173,6 +174,9 @@ async def lifespan(app: FastAPI):
 
     app.state.scheduler = scheduler
 
+    # Aviso de arranque al grupo de soporte (mismo patrón que taso-gcg/taso-bot)
+    await notify_support_group(f"🚀 taso-api v{API_VERSION} en línea.")
+
     yield
 
     # Shutdown
@@ -182,6 +186,9 @@ async def lifespan(app: FastAPI):
 
     await app.state.engine.dispose()
     logger.info("✅ [Shutdown] Base de datos desconectada")
+
+    # Aviso de apagado al grupo de soporte
+    await notify_support_group("👋 taso-api detenido.")
 
 
 app = FastAPI(
@@ -332,6 +339,16 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
         f"Internal Error | {request.method} {request.url.path} | {type(exc).__name__}: {exc}",
         exc_info=True,  # Incluye stack trace en el log
     )
+
+    # Aviso al grupo de soporte, fire-and-forget (mismo criterio que
+    # _log_request más arriba: no bloquea la respuesta al cliente)
+    resumen = f"{type(exc).__name__}: {exc}"[:300]
+    asyncio.create_task(
+        notify_support_group(
+            f"⚠️ Error no controlado en taso-api ({request.method} {request.url.path}): {resumen}"
+        )
+    )
+
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
