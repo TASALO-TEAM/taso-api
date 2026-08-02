@@ -57,6 +57,21 @@ class Settings(BaseSettings):
         description="Token del bot (reutiliza el de taso-gcg) usado solo para mandar estos avisos",
     )
 
+    # Gestión de base de datos (comando /db en taso-bot) — ver
+    # docs/plans/2026-08-01-comando-db-gestion-retencion-tasas.md
+    db_backup_dir: str = Field(
+        default="/var/backups/tasalo",
+        description="Directorio (fuera del repo) donde se guardan los backups de la DB",
+    )
+    db_backup_retention: int = Field(
+        default=2,
+        description="Cantidad de backups a conservar; al crear uno nuevo se borra el más antiguo si se excede",
+    )
+    rates_retention_days: int = Field(
+        default=365,
+        description="Días de retención para rate_snapshots/history_snapshots antes de podarlos",
+    )
+
     def model_post_init(self, __context) -> None:
         """Validar configuración después de inicializar."""
         if self.refresh_interval_minutes < 1:

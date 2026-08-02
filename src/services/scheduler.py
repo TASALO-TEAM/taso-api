@@ -241,6 +241,49 @@ async def init_year_scheduler(
     print("✅ [Scheduler] Year new-year greeting job added (00:00 UTC daily)")
 
 
+def init_rates_retention_scheduler(
+    scheduler: AsyncIOScheduler,
+    db_factory: Callable[[], AsyncSession],
+) -> None:
+    """Poda diaria de rate_snapshots/history_snapshots más viejos que
+    RATES_RETENTION_DAYS (default 365). Ver
+    docs/plans/2026-08-01-comando-db-gestion-retencion-tasas.md.
+
+    Corre a las 03:10 UTC (fuera de horas pico, después del resto de jobs
+    diarios). Notifica al grupo de soporte con el conteo borrado.
+    """
+    from src.services import retention_service
+    from src.services.alert_notifier import notify as notify_support_group
+
+    async def prune_rates_job() -> None:
+        db = db_factory()
+        try:
+            async with db:
+                result = await retention_service.prune_old_rates(db)
+                total = result["rate_snapshots_deleted"] + result["history_snapshots_deleted"]
+                if total > 0:
+                    await notify_support_group(
+                        f"🧹 Poda diaria de tasas: "
+                        f"{result['rate_snapshots_deleted']} rate_snapshots, "
+                        f"{result['history_snapshots_deleted']} history_snapshots "
+                        f"borrados (> {result['days']} días)."
+                    )
+        except Exception:
+            logger.exception("❌ Poda diaria de tasas falló")
+
+    scheduler.add_job(
+        prune_rates_job,
+        trigger="cron",
+        hour=3,
+        minute=10,
+        timezone="UTC",
+        id="rates_retention_prune",
+        name="Poda diaria de tasas históricas (>1 año)",
+        replace_existing=True,
+    )
+    print("✅ [Scheduler] Rates retention job added (03:10 UTC)")
+
+
 async def refresh_all(db_factory: Callable) -> None:
     """Job que se ejecuta periódicamente: scrapers → persistencia → history → scheduler_status."""
     print(f"🔄 [Scheduler] Iniciando refresh_all")

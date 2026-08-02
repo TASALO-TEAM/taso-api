@@ -17,7 +17,9 @@ class RateSnapshot(Base):
     currency = Column(String(20), nullable=False, index=True)  # 'USD', 'EUR', 'MLC', etc.
     buy_rate = Column(Numeric(12, 4), nullable=True)  # Tasa de compra (CADECA)
     sell_rate = Column(Numeric(12, 4), nullable=True)  # Tasa de venta / única
-    fetched_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    # Índice añadido en migración 4h — necesario para la poda de retención
+    # (1 año) y las consultas de histórico (get_history, get_latest_rates)
+    fetched_at = Column(DateTime(timezone=True), nullable=False, index=True, default=lambda: datetime.now(timezone.utc))
     created_at = Column(
         DateTime(timezone=True),
         nullable=False,
