@@ -3,6 +3,12 @@
 Modelo (2026-06-30): archivo canónico único, sobrescrito en cada intento.
 Una sola fila en DB (upsert), sin historial por fecha. Si la descarga falla,
 se sirve el archivo/fila existente marcados como 'stale'.
+
+(2026-09-26, ticket #5): junto con cada descarga fresca de la imagen se
+captura también el JSON de tasas de la misma fuente (fetch_cubanomic),
+guardado en extra_data.rates. Así el texto que acompaña la imagen siempre
+coincide con lo dibujado en ella (mismo instante), sin depender de un
+endpoint cacheado aparte que podría desincronizarse.
 """
 
 import json
@@ -15,6 +21,7 @@ from sqlalchemy import select
 
 from src.models.image_snapshot import ImageSnapshot
 from src.scrapers.images import download_eltoque_post_image, ensure_directory_exists
+from src.scrapers.cubanomic import fetch_cubanomic
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +62,8 @@ async def capture_and_store_image(
 
     if download_result.get("success"):
         logger.info("✅ [capture] Imagen refrescada: %s", output_path)
-        return await _upsert_snapshot(db, source, output_path, download_result)
+        rates = await _fetch_rates_for_snapshot()
+        return await _upsert_snapshot(db, source, output_path, download_result, rates)
 
     logger.warning(
         "⚠️ [capture] Descarga falló (%s), evaluando fallback local...",
@@ -79,11 +87,27 @@ async def capture_and_store_image(
     }
 
 
+async def _fetch_rates_for_snapshot() -> Optional[dict]:
+    """Trae USD/EUR/MLC de la misma fuente, para el mismo instante que la imagen.
+
+    Nunca lanza excepción: si falla, la imagen se guarda igual sin tasas
+    en extra_data (mismo espíritu 'nunca falla' del resto del módulo).
+    """
+    try:
+        result = await fetch_cubanomic(days=7)
+        if result and result.get("ok"):
+            return result.get("data")
+    except Exception as e:
+        logger.warning("⚠️ [capture] No se pudieron obtener tasas junto a la imagen: %s", e)
+    return None
+
+
 async def _upsert_snapshot(
     db: AsyncSession,
     source: str,
     output_path: str,
     result: dict,
+    rates: Optional[dict] = None,
 ) -> dict:
     """Crea o actualiza la única fila de ImageSnapshot para esta fuente."""
     try:
@@ -91,6 +115,7 @@ async def _upsert_snapshot(
         extra_data = json.dumps({
             "url": "https://iframe.cubanomic.com/",
             "method": "download_guardar_post",
+            "rates": rates,
         })
 
         if existing:
