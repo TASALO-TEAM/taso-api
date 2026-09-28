@@ -464,16 +464,16 @@ sudo journalctl -u taso-api -f
 
 ---
 
-📱 Apple Shortcut — TASALO
+## 📱 Apple Shortcut — TASALO
 
-Check the latest exchange rates from TASALO API directly from Apple’s Shortcuts app.
+Check the latest exchange rates from TASALO API directly from Apple's **Shortcuts** app.
 
-Install the shortcut:
-👉 TASALO — Apple Shortcut
+**Install the shortcut:**  
+👉 [TASALO — Apple Shortcut](https://www.icloud.com/shortcuts/69f6c34b16c24f32b1b9e5a6aef81091)
 
 The shortcut uses data provided by TASALO API and provides quick access to current exchange rates from your iPhone, iPad, or Mac.
 
-Note: When installing a shortcut shared through iCloud, Apple may display a confirmation screen before adding it to your Shortcuts library.
+> **Note:** When installing a shortcut shared through iCloud, Apple may display a confirmation screen before adding it to your Shortcuts library.
 
 ---
 ## 🔧 Troubleshooting
