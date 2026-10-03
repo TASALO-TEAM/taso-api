@@ -38,6 +38,13 @@ class LatestRatesResponse(BaseModel):
     ok: bool = Field(True, description="Estado de la respuesta")
     data: LatestRatesData = Field(..., description="Tasas de todas las fuentes")
     updated_at: datetime = Field(..., description="Cuándo se actualizaron los datos")
+    sources_updated_at: dict[str, datetime] = Field(
+        default_factory=dict,
+        description=(
+            "Hora real (fetched_at) del último dato de cada fuente. A diferencia de updated_at "
+            "(hora de la respuesta), esta no avanza si el scraper de una fuente lleva tiempo sin actualizar."
+        ),
+    )
 
 
 class HistoryQueryParams(BaseModel):

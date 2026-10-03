@@ -12,10 +12,11 @@ from src.models.ad import Ad
 from src.models.ticket import Ticket
 from src.models.api_request_log import ApiRequestLog
 from src.models.tspl_subscription import TsplSubscription
+from src.models.app_message import AppMessage
 
 __all__ = [
     "RateSnapshot", "SchedulerStatus", "CubanomicRate",
     "ImageSnapshot", "UserImageAlert",
     "YearQuote", "YearSubscription", "YearExtraFlag",
-    "Ad", "Ticket", "ApiRequestLog", "TsplSubscription",
+    "Ad", "Ticket", "ApiRequestLog", "TsplSubscription", "AppMessage",
 ]

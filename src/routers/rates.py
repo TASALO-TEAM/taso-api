@@ -30,6 +30,25 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _latest_fetched_at(rates: dict) -> datetime | None:
+    """Hora real del dato de una fuente: el `fetched_at` más reciente entre sus monedas.
+
+    get_latest_rates() ya incluye `fetched_at` (ISO) en cada moneda. Devuelve None si ninguna
+    lo trae o no se puede interpretar. Un valor sin zona horaria se toma como UTC.
+    """
+    stamps: list[datetime] = []
+    for info in rates.values():
+        raw = info.get("fetched_at") if isinstance(info, dict) else None
+        if not isinstance(raw, str):
+            continue
+        try:
+            parsed = datetime.fromisoformat(raw)
+        except ValueError:
+            continue
+        stamps.append(parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc))
+    return max(stamps) if stamps else None
+
+
 @router.get("/latest", response_model=LatestRatesResponse)
 async def get_latest_rates(
     db: AsyncSession = Depends(get_db),
@@ -61,7 +80,12 @@ async def get_latest_rates(
     bcc_rates = {}
     binance_rates = {}
 
+    sources_updated_at: dict[str, datetime] = {}
+
     for source, rates in rates_data.items():
+        fetched_at = _latest_fetched_at(rates)
+        if fetched_at is not None:
+            sources_updated_at[source] = fetched_at
         formatted_rates = {}
         for currency, rate_info in rates.items():
             if source == 'cadeca':
@@ -98,7 +122,8 @@ async def get_latest_rates(
             bcc=bcc_rates,
             binance=binance_rates
         ),
-        updated_at=updated_at
+        updated_at=updated_at,
+        sources_updated_at=sources_updated_at,
     )
 
 

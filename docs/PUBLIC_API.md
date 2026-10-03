@@ -83,7 +83,12 @@ curl "http://tasalo.duckdns.org:8040/api/v1/tasas/latest"
     },
     "binance": {}
   },
-  "updated_at": "2026-07-07T14:00:00Z"
+  "updated_at": "2026-07-07T14:00:00Z",
+  "sources_updated_at": {
+    "eltoque": "2026-07-07T13:55:02Z",
+    "cadeca": "2026-07-07T13:55:03Z",
+    "bcc": "2026-07-07T13:55:03Z"
+  }
 }
 ```
 
@@ -96,6 +101,8 @@ curl "http://tasalo.duckdns.org:8040/api/v1/tasas/latest"
 | `sell` | número o `null` | Tasa de venta — solo poblada en CADECA y combustible. En CADECA, `rate` == `sell` |
 | `change` | `"up"` / `"down"` / `"neutral"` | Dirección respecto al snapshot anterior — listo para pintar flechas 🔺🔻 sin calcularlo vos mismo |
 | `prev_rate` | número o `null` | Valor anterior, `null` si aún no hay snapshot previo |
+
+> **`updated_at` vs `sources_updated_at`:** `updated_at` es la hora **de la respuesta**. `sources_updated_at` trae la hora **real del último dato de cada fuente** (`fetched_at`); si un scraper lleva rato sin actualizar, esa hora no avanza. Para mostrar "actualizado hace X" usa `sources_updated_at` de la fuente que muestras. Una fuente sin datos puede no aparecer.
 
 ### `GET /api/v1/tasas/eltoque`
 
@@ -135,6 +142,7 @@ Igual formato, sin el wrapper de las 4 fuentes:
 |---|---|
 | `GET /api/v1/ads/active` | Lista de anuncios activos del ecosistema TASALO (`id`, `text`, `is_sponsored`, `weight`) |
 | `GET /api/v1/ads/random` | Un anuncio activo elegido al azar, ponderado por `weight`. `data` es `null` si no hay ninguno activo (no es un error) |
+| `GET /api/v1/app/messages?limit=5&since_id=0` | Últimos mensajes del equipo para la app Android (`id`, `title`, `body`, `format`, `created_at`), los más nuevos primero. `format` es `telegram` (Markdown legacy de Telegram: `*negrita*`, `_cursiva_`) o `markdown` (estándar). `limit` 1–20 (por defecto 5); con `since_id` solo devuelve los de id mayor. `data` es `[]` si no hay ninguno (no es un error) |
 | `GET /api/v1/year/state` | Progreso del año en curso + frase motivacional del día (feature de comunidad, no relacionada con tasas) |
 | `POST /api/v1/images/eltoque/capture` | Fuerza una captura fresca de la imagen del post diario de ElToque. Dispara una acción real cada vez que se llama — evita integrarlo si solo necesitás los números |
 | `GET /api/v1/images/eltoque/latest` | Metadata de la última imagen capturada |
