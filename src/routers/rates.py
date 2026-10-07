@@ -79,6 +79,7 @@ async def get_latest_rates(
     cadeca_rates = {}
     bcc_rates = {}
     binance_rates = {}
+    qvapay_rates = {}
 
     sources_updated_at: dict[str, datetime] = {}
 
@@ -88,12 +89,16 @@ async def get_latest_rates(
             sources_updated_at[source] = fetched_at
         formatted_rates = {}
         for currency, rate_info in rates.items():
-            if source == 'cadeca':
-                # CADECA tiene buy/sell, usar sell_rate como principal
+            if source in ('cadeca', 'qvapay'):
+                # CADECA: rate = venta. QvaPay: rate = promedio (compra + venta) / 2,
+                # ya calculado por el servicio. Ambas exponen buy/sell explícitos.
                 formatted_rates[currency] = CurrencyRate(
-                    rate=rate_info.get('sell', 0) or 0,
-                    buy=rate_info.get('buy'),  # Agregar buy explícitamente
-                    sell=rate_info.get('sell'),  # Agregar sell explícitamente
+                    rate=(
+                        rate_info.get('rate', 0) if source == 'qvapay'
+                        else rate_info.get('sell', 0)
+                    ) or 0,
+                    buy=rate_info.get('buy'),
+                    sell=rate_info.get('sell'),
                     change=rate_info.get('change', 'neutral'),
                     prev_rate=rate_info.get('prev_rate')
                 )
@@ -113,6 +118,8 @@ async def get_latest_rates(
             bcc_rates = formatted_rates
         elif source == 'binance':
             binance_rates = formatted_rates
+        elif source == 'qvapay':
+            qvapay_rates = formatted_rates
 
     return LatestRatesResponse(
         ok=True,
@@ -120,7 +127,8 @@ async def get_latest_rates(
             eltoque=eltoque_rates,
             cadeca=cadeca_rates,
             bcc=bcc_rates,
-            binance=binance_rates
+            binance=binance_rates,
+            qvapay=qvapay_rates,
         ),
         updated_at=updated_at,
         sources_updated_at=sources_updated_at,
@@ -238,6 +246,45 @@ async def get_bcc_rates(
     )
 
 
+@router.get("/qvapay", response_model=SourceRatesResponse)
+async def get_qvapay_rates(
+    db: AsyncSession = Depends(get_db),
+    max_age_minutes: int = Query(
+        default=120,
+        ge=5,
+        le=1440,
+        description="Máxima edad de datos en minutos (fallback a histórico)"
+    )
+) -> SourceRatesResponse:
+    """
+    Obtiene las últimas tasas P2P de QvaPay por método de pago.
+
+    Cada valor es "cuánto de ese método por 1 USD de QvaPay" (CUP, MLC, TROPIPAY, ETECSA,
+    ZELLE, CLASICA, BOLSATM, BANDECPREPAGO, SBERBANK); no todos son CUP por unidad.
+    ``rate`` es el promedio (compra + venta) / 2; ``buy`` y ``sell`` son los promedios de
+    compra y venta. Los métodos sin operaciones recientes no aparecen.
+
+    Incluye indicadores de cambio (up/down/neutral) calculados sobre el promedio.
+    """
+    rates, updated_at = await rates_service.get_source_rates(db, 'qvapay', max_age_minutes)
+
+    formatted_rates = {}
+    for currency, rate_info in rates.items():
+        formatted_rates[currency] = CurrencyRate(
+            rate=rate_info.get('rate', 0) or 0,
+            buy=rate_info.get('buy'),
+            sell=rate_info.get('sell'),
+            change=rate_info.get('change', 'neutral'),
+            prev_rate=rate_info.get('prev_rate')
+        )
+
+    return SourceRatesResponse(
+        source='qvapay',
+        rates=formatted_rates,
+        updated_at=updated_at or datetime.now(timezone.utc)
+    )
+
+
 @router.get("/fuel", response_model=SourceRatesResponse)
 async def get_fuel_rates(
     db: AsyncSession = Depends(get_db),
@@ -278,7 +325,7 @@ async def get_fuel_rates(
 async def get_history(
     source: str = Query(
         default="eltoque",
-        description="Fuente de datos (eltoque, cadeca, bcc, binance)"
+        description="Fuente de datos (eltoque, cadeca, bcc, binance, qvapay)"
     ),
     currency: str = Query(
         default="USD",
@@ -295,7 +342,7 @@ async def get_history(
     """
     Obtiene histórico de tasas para una fuente y moneda específicas.
 
-    - **source**: Fuente de datos (eltoque, cadeca, bcc, binance)
+    - **source**: Fuente de datos (eltoque, cadeca, bcc, binance, qvapay)
     - **currency**: Moneda a consultar (USD, EUR, etc.)
     - **days**: Días de histórico (1-365, default: 7)
     """
@@ -496,7 +543,7 @@ async def get_local_history(
     """
     Obtiene histórico local de tasas (USD/EUR/MLC) desde la base de datos.
 
-    Los datos se recolectan automáticamente cada 5 minutos del refresh cycle.
+    Los datos se recolectan automáticamente cada 15 minutos del refresh cycle.
 
     Args:
         days: Número de días de histórico (1-730). Default: 1.

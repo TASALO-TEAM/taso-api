@@ -1,4 +1,4 @@
-"""Poda de tasas históricas — retención de 1 año.
+"""Poda de tasas históricas — retención de 6 meses (180 días por defecto).
 
 Ver docs/plans/2026-08-01-comando-db-gestion-retencion-tasas.md. A
 diferencia del plan viejo (2026-04-27-snapshot-cleanup-retention-plan.md,
@@ -36,7 +36,7 @@ async def prune_old_rates(db: AsyncSession, days: int | None = None) -> PruneRes
 
     Args:
         db: sesión async
-        days: umbral de retención; por defecto Settings.rates_retention_days (365)
+        days: umbral de retención; por defecto Settings.rates_retention_days (180)
 
     Returns:
         PruneResult con conteos borrados y el cutoff usado.

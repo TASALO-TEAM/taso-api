@@ -11,11 +11,11 @@
 
 ## 🏗️ Executive Summary
 
-**TASALO API** is a production-ready REST API that aggregates exchange rates from multiple Cuban sources: ElToque (informal market), CADECA, BCC (official rates), and Binance (crypto). Built with **FastAPI** and **PostgreSQL**, it provides real-time currency data with automatic updates every 5 minutes, historical tracking, and change indicators.
+**TASALO API** is a production-ready REST API that aggregates exchange rates from multiple Cuban sources: ElToque (informal market), CADECA, BCC (official rates), QvaPay (P2P by payment method), and Binance (crypto). Built with **FastAPI** and **PostgreSQL**, it provides real-time currency data with automatic updates every 15 minutes, historical tracking, and change indicators.
 
 **Key Metrics:**
 - 📊 **4 data sources** aggregated
-- ⏱️ **5-minute** refresh interval
+- ⏱️ **15-minute** refresh interval
 - 📈 **Historical data** tracking
 - 🔒 **Admin API** with authentication
 - 📝 **Full OpenAPI** documentation
@@ -44,10 +44,11 @@
 ### Data Aggregation
 | Source | Type | Currencies | Update Frequency |
 |--------|------|------------|------------------|
-| **ElToque** | Informal market | USD, EUR, MLC | Every 5 min |
-| **CADECA** | Official exchange | USD, EUR | Every 5 min |
-| **BCC** | Central Bank | USD, EUR | Every 5 min |
-| **Binance** | Crypto P2P | USDT, BTC, ETH | Every 5 min |
+| **ElToque** | Informal market | USD, EUR, MLC | Every 15 min |
+| **CADECA** | Official exchange | USD, EUR | Every 15 min |
+| **BCC** | Central Bank | USD, EUR | Every 15 min |
+| **QvaPay** | P2P by payment method (average, buy, sell) | CUP, MLC, TROPIPAY, ETECSA, ZELLE... | Every 15 min |
+| **Binance** | Crypto P2P | USDT, BTC, ETH | Every 15 min |
 | **Cubanomic** | Multi-source | USD, EUR, MLC | Daily (00:01 UTC) |
 
 ### API Capabilities
@@ -65,7 +66,7 @@
 - **Async/Await:** High-performance non-blocking operations
 
 ### Scheduler
-- **Automatic Refresh:** Tasas actualizadas automáticamente cada 5 minutos
+- **Automatic Refresh:** Tasas actualizadas automáticamente cada 15 minutos
 - **Cubanomic Daily:** Fetch diario a las 00:01 UTC
 - **Manual Trigger:** Endpoint admin para refresh manual
 
@@ -106,7 +107,7 @@ curl http://localhost:8040/api/v1/health
 
 ## 🌐 Public API (Hosted)
 
-**You don't need to install or run this project to consume the data.** TASALO API is already deployed and publicly accessible — no API key required for read endpoints, CORS is open, and it updates every 5 minutes.
+**You don't need to install or run this project to consume the data.** TASALO API is already deployed and publicly accessible — no API key required for read endpoints, CORS is open, and it updates every 15 minutes.
 
 ```
 http://tasalo.duckdns.org:8040
@@ -125,9 +126,10 @@ The sections below (`API Reference`, `Code Examples`, `Installation`...) documen
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | `GET` | `/api/v1/health` | ❌ | Health check & DB status |
-| `GET` | `/api/v1/tasas/latest` | ❌ | Tasas combinadas (ElToque, CADECA, BCC, Binance) |
+| `GET` | `/api/v1/tasas/latest` | ❌ | Tasas combinadas (ElToque, CADECA, BCC, QvaPay, Binance) |
 | `GET` | `/api/v1/tasas/eltoque` | ❌ | Tasas de ElToque |
 | `GET` | `/api/v1/tasas/cadeca` | ❌ | Tasas de CADECA (compra/venta) |
+| `GET` | `/api/v1/tasas/qvapay` | — | Tasas P2P de QvaPay (promedio, compra y venta) |
 | `GET` | `/api/v1/tasas/bcc` | ❌ | Tasas de BCC (oficial) |
 | `GET` | `/api/v1/tasas/cubanomic` | ❌ | Tasas de Cubanomic (USD/EUR/MLC) **NUEVO** |
 | `GET` | `/api/v1/tasas/history` | ❌ | Histórico (source, currency, days) |
@@ -318,7 +320,7 @@ Copy `.env.example` to `.env` and configure:
 | `ELTOQUE_API_KEY` | ElToque API key | - | ✅ |
 | `ELTOQUE_API_URL` | ElToque API endpoint | `https://tasas.eltoque.com/v1/trmi` | ✅ |
 | `ADMIN_API_KEY` | Admin API authentication key | - | ✅ |
-| `REFRESH_INTERVAL_MINUTES` | Scheduler refresh interval | `5` | ✅ |
+| `REFRESH_INTERVAL_MINUTES` | Scheduler refresh interval | `15` | ✅ |
 | `ALLOWED_ORIGINS` | CORS allowed origins | `*` | ✅ |
 | `PORT` | Server port | `8040` | ❌ |
 
@@ -366,7 +368,7 @@ redis-cli ping  # Should return: PONG
 
 ## 📊 Local History System
 
-The local history endpoint provides historical rate data collected automatically from the 5-minute refresh cycles.
+The local history endpoint provides historical rate data collected automatically from the 15-minute refresh cycles.
 
 **Endpoint:** `GET /api/v1/tasas/history/local`
 
@@ -391,7 +393,7 @@ The local history endpoint provides historical rate data collected automatically
 ```
 
 **Notes:**
-- Data is automatically collected every 5 minutes from the existing refresh job
+- Data is automatically collected every 15 minutes from the existing refresh job
 - Rates are daily averages from all available sources (ElToque, CADECA, BCC)
 - Starts with 1 day of data, expands as data accumulates
 - No caching - always returns fresh data from database
@@ -404,7 +406,7 @@ The local history endpoint provides historical rate data collected automatically
 
 | Job | Frecuencia | Hora | Descripción |
 |-----|------------|------|-------------|
-| `refresh_all` | Cada 5 min | — | Refresca tasas de ElToque, CADECA, BCC, Binance |
+| `refresh_all` | Cada 15 min | — | Refresca tasas de ElToque, CADECA, BCC, Binance y QvaPay |
 | `cubanomic_daily` | Diario | 00:01 UTC | Fetch de Cubanomic (USD/EUR/MLC) |
 
 ### Ver Status

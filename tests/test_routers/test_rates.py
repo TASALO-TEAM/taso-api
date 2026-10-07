@@ -294,3 +294,69 @@ def test_get_cubanomic_history_invalid_days(client):
     # Too high (max is 730)
     response = client.get("/api/v1/tasas/history/cubanomic?days=800")
     assert response.status_code == 422
+
+
+# --- QvaPay -----------------------------------------------------------------
+
+
+@pytest.fixture
+async def qvapay_data(db_session):
+    """Dos ciclos de QvaPay: el anterior (CUP) y el actual (CUP y ZELLE con un solo lado)."""
+    now = datetime.now(timezone.utc)
+    previous = datetime(2026, 3, 20, 14, 30, tzinfo=timezone.utc)
+    db_session.add_all([
+        RateSnapshot(source='qvapay', currency='CUP', buy_rate=970.00, sell_rate=980.00,
+                     fetched_at=previous),
+        RateSnapshot(source='qvapay', currency='CUP', buy_rate=978.00, sell_rate=984.00,
+                     fetched_at=now),
+        RateSnapshot(source='qvapay', currency='ZELLE', buy_rate=1.02, sell_rate=None,
+                     fetched_at=now),
+    ])
+    await db_session.commit()
+
+    yield
+
+    await db_session.execute(text("DELETE FROM rate_snapshots WHERE source = 'qvapay'"))
+    await db_session.commit()
+
+
+def test_get_qvapay_rates(client, qvapay_data):
+    """GET /api/v1/tasas/qvapay devuelve promedio, compra y venta."""
+    response = client.get("/api/v1/tasas/qvapay")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["source"] == "qvapay"
+
+    cup = data["rates"]["CUP"]
+    assert cup["rate"] == pytest.approx(981.0)
+    assert cup["buy"] == pytest.approx(978.0)
+    assert cup["sell"] == pytest.approx(984.0)
+    assert cup["change"] == "up"
+    assert cup["prev_rate"] == pytest.approx(975.0)
+
+    zelle = data["rates"]["ZELLE"]
+    assert zelle["rate"] == pytest.approx(1.02)
+    assert zelle["sell"] is None
+
+
+def test_get_latest_rates_includes_qvapay(client, qvapay_data):
+    """GET /api/v1/tasas/latest incluye la clave qvapay y su hora real."""
+    response = client.get("/api/v1/tasas/latest")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["data"]["qvapay"]["CUP"]["rate"] == pytest.approx(981.0)
+    assert data["data"]["qvapay"]["CUP"]["buy"] == pytest.approx(978.0)
+    assert "qvapay" in data["sources_updated_at"]
+
+
+def test_get_history_accepts_qvapay(client, qvapay_data):
+    """GET /api/v1/tasas/history acepta source=qvapay con compra y venta."""
+    response = client.get("/api/v1/tasas/history", params={"source": "qvapay", "currency": "CUP", "days": 365})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] >= 1
+    assert data["data"][0]["source"] == "qvapay"
+    assert data["data"][0]["buy_rate"] is not None

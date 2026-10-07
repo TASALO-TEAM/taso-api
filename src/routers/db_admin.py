@@ -83,7 +83,7 @@ async def download_backup(filename: str) -> FileResponse:
 
 @router.post("/db/prune-rates", response_model=PruneRatesResponse)
 async def prune_rates(db: AsyncSession = Depends(get_db)) -> PruneRatesResponse:
-    """Dispara on-demand la poda de tasas históricas (>1 año). El mismo
+    """Dispara on-demand la poda de tasas históricas (>6 meses). El mismo
     trabajo corre automáticamente todos los días vía el scheduler."""
     result = await retention_service.prune_old_rates(db)
 

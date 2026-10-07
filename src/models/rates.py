@@ -27,7 +27,7 @@ class CubanomicRate(Base):
 
 class HistorySnapshot(Base):
     """
-    Historical snapshot of all rates from the 5-minute refresh cycle.
+    Historical snapshot of all rates from the 15-minute refresh cycle.
     Automatically populated by the existing scheduler job.
     """
 

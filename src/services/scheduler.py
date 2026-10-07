@@ -246,7 +246,7 @@ def init_rates_retention_scheduler(
     db_factory: Callable[[], AsyncSession],
 ) -> None:
     """Poda diaria de rate_snapshots/history_snapshots más viejos que
-    RATES_RETENTION_DAYS (default 365). Ver
+    RATES_RETENTION_DAYS (default 180). Ver
     docs/plans/2026-08-01-comando-db-gestion-retencion-tasas.md.
 
     Corre a las 03:10 UTC (fuera de horas pico, después del resto de jobs
@@ -278,7 +278,7 @@ def init_rates_retention_scheduler(
         minute=10,
         timezone="UTC",
         id="rates_retention_prune",
-        name="Poda diaria de tasas históricas (>1 año)",
+        name="Poda diaria de tasas históricas (>6 meses)",
         replace_existing=True,
     )
     print("✅ [Scheduler] Rates retention job added (03:10 UTC)")
@@ -300,7 +300,7 @@ async def refresh_all(db_factory: Callable) -> None:
 
             # Purga de api_request_log > 30 días. Se hace acá (no en un job
             # aparte) para reusar el ciclo existente sin sumar otro cron —
-            # es una DELETE indexada, barata incluso corriendo cada 5 min.
+            # es una DELETE indexada, barata incluso corriendo cada 15 min.
             try:
                 purged = await purge_old_api_request_logs(session)
                 if purged:

@@ -160,7 +160,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("⚠️ Year scheduler init failed: %s", e)
 
-    # Poda diaria de tasas históricas (>1 año) — no-fatal si falla, la
+    # Poda diaria de tasas históricas (>6 meses) — no-fatal si falla, la
     # poda on-demand vía /admin/db/prune-rates sigue funcionando igual
     try:
         init_rates_retention_scheduler(scheduler, database.async_session_factory)

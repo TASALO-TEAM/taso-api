@@ -18,7 +18,7 @@ class RateSnapshot(Base):
     buy_rate = Column(Numeric(12, 4), nullable=True)  # Tasa de compra (CADECA)
     sell_rate = Column(Numeric(12, 4), nullable=True)  # Tasa de venta / única
     # Índice añadido en migración 4h — necesario para la poda de retención
-    # (1 año) y las consultas de histórico (get_history, get_latest_rates)
+    # (6 meses) y las consultas de histórico (get_history, get_latest_rates)
     fetched_at = Column(DateTime(timezone=True), nullable=False, index=True, default=lambda: datetime.now(timezone.utc))
     created_at = Column(
         DateTime(timezone=True),

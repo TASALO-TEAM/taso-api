@@ -34,7 +34,7 @@ def test_settings_default_values():
         admin_api_key="test_default"  # Override del .env local
     )
     
-    assert settings.refresh_interval_minutes == 5  # default
+    assert settings.refresh_interval_minutes == 15  # default
     assert settings.allowed_origins == "*"  # default
 
 

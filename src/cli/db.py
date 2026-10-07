@@ -4,7 +4,7 @@ Uso:
     python -m src.cli.db backup
     python -m src.cli.db list
     python -m src.cli.db restore tasalo_20260801_031000.dump --confirm=RESTORE
-    python -m src.cli.db prune-rates [--days 365]
+    python -m src.cli.db prune-rates [--days 180]
 
 `restore` es la ÚNICA vía de restauración en todo el sistema — no existe
 como endpoint HTTP ni como comando de Telegram. Ver
@@ -139,7 +139,7 @@ def _restore_sqlite(database_url: str, backup_path: Path) -> None:
 
 @app.command(name="prune-rates")
 def prune_rates(
-    days: int = typer.Option(None, help="Días de retención (default: RATES_RETENTION_DAYS, 365)"),
+    days: int = typer.Option(None, help="Días de retención (default: RATES_RETENTION_DAYS, 180)"),
 ):
     """Borra rate_snapshots/history_snapshots más viejos que el umbral."""
     from src.services import retention_service

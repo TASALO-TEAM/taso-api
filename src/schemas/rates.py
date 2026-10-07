@@ -9,8 +9,8 @@ class CurrencyRate(BaseModel):
     """Tasa individual con indicador de cambio."""
 
     rate: float = Field(..., description="Tasa de cambio actual")
-    buy: float | None = Field(None, description="Tasa de compra (solo CADECA)")
-    sell: float | None = Field(None, description="Tasa de venta (solo CADECA)")
+    buy: float | None = Field(None, description="Tasa de compra (CADECA y QvaPay)")
+    sell: float | None = Field(None, description="Tasa de venta (CADECA y QvaPay)")
     change: Literal["up", "down", "neutral"] = Field(..., description="Dirección del cambio")
     prev_rate: float | None = Field(None, description="Tasa anterior")
 
@@ -18,7 +18,7 @@ class CurrencyRate(BaseModel):
 class SourceRatesResponse(BaseModel):
     """Respuesta para tasas de una fuente específica."""
 
-    source: str = Field(..., description="Nombre de la fuente (eltoque, cadeca, bcc, binance)")
+    source: str = Field(..., description="Nombre de la fuente (eltoque, cadeca, bcc, binance, qvapay)")
     rates: dict[str, CurrencyRate] = Field(..., description="Tasas por moneda")
     updated_at: datetime = Field(..., description="Cuándo se actualizaron los datos")
 
@@ -30,6 +30,10 @@ class LatestRatesData(BaseModel):
     cadeca: dict[str, CurrencyRate] = Field(default_factory=dict, description="Tasas de CADECA")
     bcc: dict[str, CurrencyRate] = Field(default_factory=dict, description="Tasas de BCC")
     binance: dict[str, CurrencyRate] = Field(default_factory=dict, description="Tasas de Binance")
+    qvapay: dict[str, CurrencyRate] = Field(
+        default_factory=dict,
+        description="Tasas P2P de QvaPay por método de pago (rate = promedio compra/venta, más buy y sell)",
+    )
 
 
 class LatestRatesResponse(BaseModel):
@@ -50,7 +54,7 @@ class LatestRatesResponse(BaseModel):
 class HistoryQueryParams(BaseModel):
     """Parámetros de consulta para histórico."""
 
-    source: Literal["eltoque", "cadeca", "bcc", "binance"] = Field(
+    source: Literal["eltoque", "cadeca", "bcc", "binance", "qvapay"] = Field(
         default="eltoque",
         description="Fuente de datos"
     )

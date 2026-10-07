@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     admin_api_key: str = "changeme"
     
     # Scheduler
-    refresh_interval_minutes: int = 5
+    refresh_interval_minutes: int = 15
     
     # CORS
     allowed_origins: str = "*"
@@ -68,7 +68,7 @@ class Settings(BaseSettings):
         description="Cantidad de backups a conservar; al crear uno nuevo se borra el más antiguo si se excede",
     )
     rates_retention_days: int = Field(
-        default=365,
+        default=180,
         description="Días de retención para rate_snapshots/history_snapshots antes de podarlos",
     )
 

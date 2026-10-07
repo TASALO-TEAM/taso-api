@@ -190,7 +190,7 @@ async def seed_cubanomic_rate(db: AsyncSession, quiet: bool = False) -> Cubanomi
 
 
 async def seed_history_snapshot(db: AsyncSession, quiet: bool = False) -> HistorySnapshot:
-    """Create a HistorySnapshot (aggregated 5-min snapshot)."""
+    """Create a HistorySnapshot (aggregated 15-min snapshot)."""
     snap = HistorySnapshot(
         fetched_at=datetime.now(timezone.utc),
         eltoque_usd=365.50,

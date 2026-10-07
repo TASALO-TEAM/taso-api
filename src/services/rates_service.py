@@ -13,6 +13,7 @@ from src.scrapers.eltoque import fetch_eltoque
 from src.scrapers.binance import fetch_binance
 from src.scrapers.cadeca import fetch_cadeca
 from src.scrapers.bcc import fetch_bcc
+from src.scrapers.qvapay import fetch_qvapay
 from src.scrapers.cubanomic import fetch_cubanomic
 from src.models.rate_snapshot import RateSnapshot
 from src.models.rates import CubanomicRate
@@ -72,16 +73,17 @@ async def _fetch_safe(coro_func, timeout_secs: int, source_name: str) -> Any:
 
 async def fetch_all_sources() -> dict[str, Any]:
     """
-    Ejecuta los 4 scrapers en paralelo con timeouts individuales.
+    Ejecuta los 5 scrapers en paralelo con timeouts individuales.
 
     Timeouts:
     - ElToque: 12s (API externa con auth)
     - Binance: 10s (API pública rápida)
     - CADECA: 8s (web scraper inestable)
     - BCC: 10s (web scraper oficial)
+    - QvaPay: 12s (9 consultas P2P en paralelo)
 
     Returns:
-        dict con claves 'eltoque', 'binance', 'cadeca', 'bcc'
+        dict con claves 'eltoque', 'binance', 'cadeca', 'bcc', 'qvapay'
         Cada valor es el resultado del scraper o None si falló
     """
     results = await asyncio.gather(
@@ -89,6 +91,7 @@ async def fetch_all_sources() -> dict[str, Any]:
         _fetch_safe(fetch_binance, 10, "Binance"),
         _fetch_safe(fetch_cadeca, 8, "CADECA"),
         _fetch_safe(fetch_bcc, 10, "BCC"),
+        _fetch_safe(fetch_qvapay, 12, "QvaPay"),
         return_exceptions=False,
     )
 
@@ -97,6 +100,7 @@ async def fetch_all_sources() -> dict[str, Any]:
         "binance": results[1],
         "cadeca": results[2],
         "bcc": results[3],
+        "qvapay": results[4],
     }
 
 
@@ -150,6 +154,44 @@ def _normalize_cadeca_bcc_data(data: dict, source: str) -> list[dict]:
     return result
 
 
+def _normalize_qvapay_data(data: dict) -> list[dict]:
+    """
+    Normaliza datos de QvaPay a lista de {currency, buy_rate, sell_rate}.
+
+    QvaPay: {'CUP': {'buy': 978.31, 'sell': 984.78}, 'ZELLE': {'buy': 1.02, 'sell': None}}
+    Se omiten las monedas con ambos lados nulos.
+    """
+    result = []
+
+    for currency, value in data.items():
+        if not isinstance(value, dict):
+            continue
+        buy = value.get("buy")
+        sell = value.get("sell")
+        if buy is None and sell is None:
+            continue
+        result.append(
+            {
+                "currency": currency,
+                "buy_rate": float(buy) if buy is not None else None,
+                "sell_rate": float(sell) if sell is not None else None,
+            }
+        )
+
+    return result
+
+
+def _qvapay_average(buy: float | None, sell: float | None) -> float | None:
+    """Promedio (compra + venta) / 2 de QvaPay; con un solo lado, ese lado."""
+    if buy is not None and sell is not None:
+        return (float(buy) + float(sell)) / 2
+    if buy is not None:
+        return float(buy)
+    if sell is not None:
+        return float(sell)
+    return None
+
+
 def _normalize_binance_data(data: dict) -> list[dict]:
     """
     Normaliza datos de Binance a lista de {currency, buy_rate, sell_rate}.
@@ -174,7 +216,7 @@ async def save_snapshot(session: AsyncSession, source: str, data: Any) -> None:
 
     Args:
         session: SQLAlchemy async session
-        source: 'eltoque' | 'binance' | 'cadeca' | 'bcc'
+        source: 'eltoque' | 'binance' | 'cadeca' | 'bcc' | 'qvapay'
         data: Datos crudos del scraper
 
     Legacy pattern: save_*_history() de legacy/tasa_manager.py
@@ -192,6 +234,8 @@ async def save_snapshot(session: AsyncSession, source: str, data: Any) -> None:
         normalized = _normalize_cadeca_bcc_data(data, source)
     elif source == "binance":
         normalized = _normalize_binance_data(data)
+    elif source == "qvapay":
+        normalized = _normalize_qvapay_data(data)
     else:
         print(f"⚠️ Fuente desconocida: {source}")
         return
@@ -248,6 +292,51 @@ async def _get_previous_snapshot(
         return None
 
 
+async def _get_previous_qvapay_average(
+    session: AsyncSession, currency: str, current_fetched_at: datetime
+) -> float | None:
+    """
+    Promedio (compra + venta) / 2 del snapshot anterior de QvaPay para un método de pago.
+
+    Función propia porque _get_previous_snapshot solo mira sell_rate.
+    """
+    stmt = (
+        select(RateSnapshot.buy_rate, RateSnapshot.sell_rate)
+        .where(
+            RateSnapshot.source == "qvapay",
+            RateSnapshot.currency == currency,
+            RateSnapshot.fetched_at < current_fetched_at,
+        )
+        .order_by(RateSnapshot.fetched_at.desc())
+        .limit(1)
+    )
+    try:
+        result = await session.execute(stmt)
+        row = result.first()
+        if not row:
+            return None
+        return _qvapay_average(row[0], row[1])
+    except Exception as e:
+        logger.error(f"DB error in _get_previous_qvapay_average for {currency}: {e}")
+        return None
+
+
+def _format_qvapay_snapshot(snap: RateSnapshot, prev_rate: float | None) -> dict | None:
+    """Arma {rate (promedio), buy, sell, change, prev_rate} de un snapshot de QvaPay."""
+    buy = float(snap.buy_rate) if snap.buy_rate is not None else None
+    sell = float(snap.sell_rate) if snap.sell_rate is not None else None
+    average = _qvapay_average(buy, sell)
+    if average is None:
+        return None
+    return {
+        "rate": average,
+        "buy": buy,
+        "sell": sell,
+        "change": calculate_change(average, prev_rate),
+        "prev_rate": prev_rate,
+    }
+
+
 async def get_latest_rates(
     session: AsyncSession, max_age_minutes: int = 120
 ) -> dict[str, dict]:
@@ -271,7 +360,8 @@ async def get_latest_rates(
             'eltoque': {'USD': {'rate': 365.0, 'change': 'up'}},
             'binance': {'BTC': {'rate': 45000.0}},
             'cadeca': {'USD': {'buy': 120.0, 'sell': 125.0}},
-            'bcc': {'USD': {'rate': 125.0}}
+            'bcc': {'USD': {'rate': 125.0}},
+            'qvapay': {'CUP': {'rate': 981.5, 'buy': 978.3, 'sell': 984.8}}
         }
     """
     from datetime import timedelta
@@ -279,7 +369,7 @@ async def get_latest_rates(
     result = {}
     now = datetime.now(timezone.utc)
 
-    for source in ["eltoque", "binance", "cadeca", "bcc"]:
+    for source in ["eltoque", "binance", "cadeca", "bcc", "qvapay"]:
         snapshots = []
         age_minutes = None
 
@@ -415,9 +505,32 @@ async def get_latest_rates(
             if not formatted:
                 print(f"⚠️ {source}: No se pudo formatear ningún dato válido")
 
+        elif source == "qvapay":
+            formatted = {}
+            for snap in snapshots:
+                if snap.buy_rate is None and snap.sell_rate is None:
+                    print(
+                        f"⚠️ {source}/{snap.currency}: buy_rate y sell_rate son None, saltando"
+                    )
+                    continue
+
+                prev_rate = await _get_previous_qvapay_average(
+                    session, snap.currency, snap.fetched_at
+                )
+                info = _format_qvapay_snapshot(snap, prev_rate)
+                if info is None:
+                    continue
+                info["fetched_at"] = snap.fetched_at.isoformat()
+                info["data_age_minutes"] = age_minutes
+                formatted[snap.currency] = info
+
+            result[source] = formatted
+            if not formatted:
+                print(f"⚠️ {source}: No se pudo formatear ningún dato válido")
+
     # Debug final
     total_rates = sum(len(rates) for rates in result.values())
-    print(f"✅ get_latest_rates: {total_rates} tasas en total de 4 fuentes")
+    print(f"✅ get_latest_rates: {total_rates} tasas en total de 5 fuentes")
 
     return result
 
@@ -435,7 +548,7 @@ async def get_source_rates(
 
     Args:
         session: SQLAlchemy async session
-        source: 'eltoque' | 'cadeca' | 'bcc' | 'binance'
+        source: 'eltoque' | 'cadeca' | 'bcc' | 'binance' | 'qvapay'
         max_age_minutes: Máxima edad de datos antes de marcar como stale
 
     Returns:
@@ -540,6 +653,20 @@ async def get_source_rates(
                 ),
                 "prev_rate": prev_rate,
             }
+
+        elif source == "qvapay":
+            if snap.buy_rate is None and snap.sell_rate is None:
+                print(
+                    f"⚠️ {source}/{snap.currency}: buy_rate y sell_rate son None, saltando"
+                )
+                continue
+
+            prev_rate = await _get_previous_qvapay_average(
+                session, snap.currency, snap.fetched_at
+            )
+            info = _format_qvapay_snapshot(snap, prev_rate)
+            if info is not None:
+                formatted[snap.currency] = info
 
     if not formatted:
         print(f"⚠️ {source}: No se pudo formatear ningún dato válido")
@@ -785,7 +912,7 @@ async def get_cubanomic_cached(
 async def save_history_snapshot(db: AsyncSession, rates_data: dict) -> None:
     """
     Save a snapshot of all rates to the history_snapshots table.
-    Called automatically by the scheduler every 5 minutes.
+    Called automatically by the scheduler every 15 minutes.
 
     Accepts both raw scraper formats and normalized test formats.
     """

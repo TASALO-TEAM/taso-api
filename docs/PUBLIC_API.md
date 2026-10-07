@@ -1,6 +1,6 @@
 # TASALO API — Documentación para desarrolladores
 
-API REST pública que agrega tasas de cambio de Cuba en tiempo (casi) real: **ElToque** (mercado informal), **CADECA** y **BCC** (oficiales), **Binance** (cripto P2P) y **Cubanomic** (multi-fuente). Se actualiza automáticamente cada 5 minutos.
+API REST pública que agrega tasas de cambio de Cuba en tiempo (casi) real: **ElToque** (mercado informal), **CADECA** y **BCC** (oficiales), **QvaPay** (P2P por método de pago), **Binance** (cripto P2P) y **Cubanomic** (multi-fuente). Se actualiza automáticamente cada 15 minutos.
 
 Esta guía es para cualquiera que quiera **consumir los datos ya desplegados**, sin necesidad de instalar ni mantener su propia instancia de la API: widgets de escritorio, extensiones de navegador, bots de Telegram, apps de finanzas personales, dashboards, etc.
 
@@ -49,10 +49,11 @@ Los errores siguen el mismo criterio:
 | Método | Endpoint | Parámetros | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/health` | — | Estado de la API y de la base de datos |
-| GET | `/api/v1/tasas/latest` | `max_age_minutes` (5–1440, default 120) | Todas las fuentes combinadas: ElToque, CADECA, BCC, Binance |
+| GET | `/api/v1/tasas/latest` | `max_age_minutes` (5–1440, default 120) | Todas las fuentes combinadas: ElToque, CADECA, BCC, QvaPay, Binance |
 | GET | `/api/v1/tasas/eltoque` | `max_age_minutes` (5–1440, default 120) | Solo ElToque (mercado informal) |
 | GET | `/api/v1/tasas/cadeca` | `max_age_minutes` (5–1440, default 120) | Solo CADECA (oficial, compra/venta) |
 | GET | `/api/v1/tasas/bcc` | `max_age_minutes` (5–1440, default 120) | Solo Banco Central de Cuba (oficial) |
+| GET | `/api/v1/tasas/qvapay` | `max_age_minutes` (5-1440, default 120) | Solo QvaPay P2P: promedio, compra y venta por método de pago |
 | GET | `/api/v1/tasas/fuel` | `max_age_minutes` (1–1440, default 60) | Precios de combustible (mercado informal) |
 | GET | `/api/v1/tasas/cubanomic` | `max_age_minutes` (60–2880, default 1440) | USD / EUR / MLC de Cubanomic |
 | GET | `/api/v1/tasas/history` | `source`, `currency`, `days` (1–365) | Histórico crudo por fuente y moneda |
@@ -81,13 +82,18 @@ curl "http://tasalo.duckdns.org:8040/api/v1/tasas/latest"
     "bcc": {
       "USD": { "rate": 120.0, "buy": null, "sell": null, "change": "neutral", "prev_rate": null }
     },
+    "qvapay": {
+      "CUP": { "rate": 981.54, "buy": 978.31, "sell": 984.78, "change": "up", "prev_rate": 979.2 },
+      "ZELLE": { "rate": 1.02, "buy": 1.02, "sell": null, "change": "neutral", "prev_rate": null }
+    },
     "binance": {}
   },
   "updated_at": "2026-07-07T14:00:00Z",
   "sources_updated_at": {
     "eltoque": "2026-07-07T13:55:02Z",
     "cadeca": "2026-07-07T13:55:03Z",
-    "bcc": "2026-07-07T13:55:03Z"
+    "bcc": "2026-07-07T13:55:03Z",
+    "qvapay": "2026-07-07T13:55:04Z"
   }
 }
 ```
@@ -118,6 +124,24 @@ Igual formato, sin el wrapper de las 4 fuentes:
   "updated_at": "2026-07-07T14:00:00Z"
 }
 ```
+
+### `GET /api/v1/tasas/qvapay`
+
+Tasas P2P de QvaPay por método de pago (`CUP`, `MLC`, `TROPIPAY`, `ETECSA`, `ZELLE`, `CLASICA`, `BOLSATM`, `BANDECPREPAGO`, `SBERBANK`). Mismo formato que `/cadeca`: `rate` es el **promedio** `(compra + venta) / 2`, y `buy` / `sell` son los promedios de compra y venta (si falta un lado, `rate` es el que haya). El `change` se calcula sobre el promedio.
+
+> **Unidad:** cada valor es *cuánto de ese método por 1 USD de QvaPay*. No todos son CUP por unidad (ej. `MLC` ~1.45, `ZELLE` ~1.02). Los métodos sin operaciones recientes (`SBERBANK` casi siempre) no aparecen.
+
+```json
+{
+  "source": "qvapay",
+  "rates": {
+    "CUP": { "rate": 981.54, "buy": 978.31, "sell": 984.78, "change": "up", "prev_rate": 979.2 }
+  },
+  "updated_at": "2026-07-07T14:00:00Z"
+}
+```
+
+`/history` también acepta `source=qvapay` (con `buy_rate` y `sell_rate`).
 
 ### `GET /api/v1/tasas/history?source=eltoque&currency=USD&days=7`
 
@@ -210,11 +234,11 @@ echo "USD (ElToque): " . $data['data']['eltoque']['USD']['rate'];
 
 ## Buenas prácticas de consumo
 
-- **No hace falta consultar más seguido que cada 5 minutos** — es el intervalo de actualización real de la API. Pedir más seguido no trae datos más frescos y solo agrega carga innecesaria.
+- **No hace falta consultar más seguido que cada 15 minutos** — es el intervalo de actualización real de la API. Pedir más seguido no trae datos más frescos y solo agrega carga innecesaria.
 - **Ajustá `max_age_minutes` según qué tan crítica sea la frescura del dato** para tu caso. El valor por defecto (120 min) es generoso; si tu aplicación calcula montos de dinero, considerá bajarlo (ej. 30 min).
 - **Revisá siempre el campo `ok`** antes de asumir que `data` es válido.
 - **Aprovechá el campo `change`** en vez de calcular vos mismo si la tasa subió o bajó respecto a la consulta anterior.
-- Si tu aplicación necesita reaccionar a cambios de tasa en tiempo real (no solo consultar bajo demanda), lo más simple es un poller cada 5 minutos que compare `change` o el valor de `rate` contra tu última lectura cacheada localmente.
+- Si tu aplicación necesita reaccionar a cambios de tasa en tiempo real (no solo consultar bajo demanda), lo más simple es un poller cada 15 minutos que compare `change` o el valor de `rate` contra tu última lectura cacheada localmente.
 
 ## Manejo de errores
 
@@ -226,7 +250,8 @@ echo "USD (ElToque): " . $data['data']['eltoque']['USD']['rate'];
 
 ## Limitaciones actuales
 
-- No hay límite de peticiones (*rate limiting*) implementado todavía — se pide usar la API de forma razonable (ver recomendación de polling cada 5 min).
+- No hay límite de peticiones (*rate limiting*) implementado todavía — se pide usar la API de forma razonable (ver recomendación de polling cada 15 min).
+- El histórico local (`/history`, `/history/local`) se conserva unos 6 meses (180 días); los rangos más largos de `/history/cubanomic` vienen de Cubanomic.
 - No existe un esquema formal de versionado más allá del prefijo `/api/v1`. Si el formato de algún campo cambia de forma incompatible en el futuro, se comunicará por los canales del proyecto.
 
 ## Lo que no es de acceso público

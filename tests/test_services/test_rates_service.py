@@ -36,20 +36,22 @@ def test_calculate_change_none():
 
 
 @pytest.mark.asyncio
-async def test_fetch_all_sources_returns_all_four_sources():
-    """fetch_all_sources ejecuta los 4 scrapers en paralelo."""
+async def test_fetch_all_sources_returns_all_sources():
+    """fetch_all_sources ejecuta los 5 scrapers en paralelo."""
     from src.services.rates_service import fetch_all_sources
     
     with patch('src.services.rates_service.fetch_eltoque') as mock_eltoque, \
          patch('src.services.rates_service.fetch_binance') as mock_binance, \
          patch('src.services.rates_service.fetch_cadeca') as mock_cadeca, \
-         patch('src.services.rates_service.fetch_bcc') as mock_bcc:
+         patch('src.services.rates_service.fetch_bcc') as mock_bcc, \
+         patch('src.services.rates_service.fetch_qvapay') as mock_qvapay:
         
         # Setup mocks
         mock_eltoque.return_value = {'tasas': {'USD': 365.0}}
         mock_binance.return_value = {'BTCUSDT': '45000.00'}
         mock_cadeca.return_value = {'USD': {'compra': 120.0, 'venta': 125.0}}
         mock_bcc.return_value = {'USD': 125.0}
+        mock_qvapay.return_value = {'CUP': {'buy': 978.31, 'sell': 984.78}}
         
         result = await fetch_all_sources()
         
@@ -57,6 +59,7 @@ async def test_fetch_all_sources_returns_all_four_sources():
         assert result['binance'] == {'BTCUSDT': '45000.00'}
         assert result['cadeca'] == {'USD': {'compra': 120.0, 'venta': 125.0}}
         assert result['bcc'] == {'USD': 125.0}
+        assert result['qvapay'] == {'CUP': {'buy': 978.31, 'sell': 984.78}}
 
 
 @pytest.mark.asyncio
@@ -67,13 +70,15 @@ async def test_fetch_all_sources_handles_individual_failures():
     with patch('src.services.rates_service.fetch_eltoque') as mock_eltoque, \
          patch('src.services.rates_service.fetch_binance') as mock_binance, \
          patch('src.services.rates_service.fetch_cadeca') as mock_cadeca, \
-         patch('src.services.rates_service.fetch_bcc') as mock_bcc:
+         patch('src.services.rates_service.fetch_bcc') as mock_bcc, \
+         patch('src.services.rates_service.fetch_qvapay') as mock_qvapay:
         
         # ElToque falla, los demás ok
         mock_eltoque.side_effect = Exception("API timeout")
         mock_binance.return_value = {'BTCUSDT': '45000.00'}
         mock_cadeca.return_value = {'USD': {'compra': 120.0, 'venta': 125.0}}
         mock_bcc.return_value = {'USD': 125.0}
+        mock_qvapay.return_value = {'CUP': {'buy': 978.31, 'sell': 984.78}}
         
         result = await fetch_all_sources()
         
@@ -81,6 +86,7 @@ async def test_fetch_all_sources_handles_individual_failures():
         assert result['binance'] is not None
         assert result['cadeca'] is not None
         assert result['bcc'] is not None
+        assert result['qvapay'] is not None
 
 
 @pytest.mark.asyncio
