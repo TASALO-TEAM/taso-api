@@ -2,13 +2,14 @@
 
 import logging
 from datetime import datetime, timezone
+from typing import Literal
 from fastapi import APIRouter, Depends, Query
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
 from src.redis_client import RedisClient, get_redis
-from src.services import fuel_service, rates_service
+from src.services import fuel_service, history_service, rates_service
 from src.schemas.rates import (
     CurrencyRate,
     LatestRatesResponse,
@@ -20,7 +21,13 @@ from src.schemas.rates import (
     CubanomicHistoryResponse,
     CubanomicHistorySnapshot,
 )
-from src.schemas.history import LocalHistoryResponse, LocalHistorySnapshot
+from src.schemas.history import (
+    DailyHistoryResponse,
+    DailyPoint,
+    LocalHistoryResponse,
+    LocalHistorySnapshot,
+    SummaryHistoryResponse,
+)
 from src.models.rates import HistorySnapshot as HistorySnapshotModel
 
 
@@ -363,6 +370,54 @@ async def get_history(
         ok=True,
         data=formatted_data,
         count=len(formatted_data)
+    )
+
+
+@router.get("/history/daily", response_model=DailyHistoryResponse)
+async def get_daily_history(
+    source: Literal["eltoque", "cadeca", "bcc", "binance", "qvapay"] = Query(
+        default="eltoque", description="Fuente de datos"
+    ),
+    currency: str = Query(default="USD", description="Moneda a consultar"),
+    days: int = Query(default=180, ge=1, le=365, description="Días de Cuba hacia atrás (1-365)"),
+    db: AsyncSession = Depends(get_db),
+) -> DailyHistoryResponse:
+    """
+    Serie diaria liviana de una fuente y moneda (para el detalle histórico de la app).
+
+    Un punto por **fecha de Cuba** (America/Havana): la lectura más cercana a las 7:00 a. m. de ese día.
+    Los días sin lectura no aparecen. En QvaPay, ``rate`` es el promedio de compra y venta.
+    """
+    code = currency.strip().upper()
+    points = await history_service.get_daily(db, source, code, days)
+    return DailyHistoryResponse(
+        source=source,
+        currency=code,
+        days=days,
+        data=[DailyPoint(date=day, rate=rate) for day, rate in points],
+    )
+
+
+@router.get("/history/summary", response_model=SummaryHistoryResponse)
+async def get_history_summary(
+    days: int = Query(default=30, ge=1, le=90, description="Días de Cuba hacia atrás (1-90)"),
+    db: AsyncSession = Depends(get_db),
+) -> SummaryHistoryResponse:
+    """
+    Resumen diario de todas las fuentes y monedas en una sola respuesta (fondo de las tarjetas de la app).
+
+    Misma regla que ``/history/daily``. Respuesta cacheada unos minutos en memoria.
+    """
+    data = await history_service.get_summary(db, days)
+    return SummaryHistoryResponse(
+        days=days,
+        data={
+            source: {
+                currency: [DailyPoint(date=day, rate=rate) for day, rate in points]
+                for currency, points in currencies.items()
+            }
+            for source, currencies in data.items()
+        },
     )
 
 
