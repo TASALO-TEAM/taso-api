@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     
     # Security
     admin_api_key: str = "changeme"
+    require_key_user_endpoints: bool = Field(
+        default=False,
+        description=(
+            "Si es true, exige X-API-Key también en los endpoints de usuario "
+            "(/images/alerts*, /year/subscriptions/me/*, /tspl/subscriptions/me/*). "
+            "Actívalo cuando todos los clientes (taso-bot y la nueva miniapp) ya manden la clave"
+        ),
+    )
     
     # Scheduler
     refresh_interval_minutes: int = 15

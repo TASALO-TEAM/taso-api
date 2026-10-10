@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
-from src.middleware.auth import require_auth
+from src.middleware.auth import require_auth, require_auth_user_endpoints
 from src.services import tspl_service
 from src.schemas.tspl import (
     TsplSubscriptionCreate,
@@ -26,7 +26,7 @@ router = APIRouter(tags=["Tspl"])
 # ── User-owned subscription endpoints (no admin key required) ──────────────
 
 
-@router.get("/subscriptions/me/{user_id}", response_model=TsplSubscriptionListResponse)
+@router.get("/subscriptions/me/{user_id}", response_model=TsplSubscriptionListResponse, dependencies=[Depends(require_auth_user_endpoints)])
 async def get_my_subscriptions(user_id: int, db: AsyncSession = Depends(get_db)):
     """Lista los horarios (0, 1 o 2) a los que está suscrito el usuario."""
     rows = await tspl_service.get_my_subscriptions(db, user_id)
@@ -42,7 +42,7 @@ async def get_my_subscriptions(user_id: int, db: AsyncSession = Depends(get_db))
     )
 
 
-@router.post("/subscriptions/me/{user_id}", response_model=TsplSubscriptionResponse)
+@router.post("/subscriptions/me/{user_id}", response_model=TsplSubscriptionResponse, dependencies=[Depends(require_auth_user_endpoints)])
 async def add_my_subscription(user_id: int, body: TsplSubscriptionCreate, db: AsyncSession = Depends(get_db)):
     """Agrega un horario a la suscripción del usuario (máximo 2 activos)."""
     if body.user_id != user_id:
@@ -64,14 +64,14 @@ async def add_my_subscription(user_id: int, body: TsplSubscriptionCreate, db: As
     )
 
 
-@router.delete("/subscriptions/me/{user_id}/{hour}")
+@router.delete("/subscriptions/me/{user_id}/{hour}", dependencies=[Depends(require_auth_user_endpoints)])
 async def delete_my_subscription(user_id: int, hour: int, db: AsyncSession = Depends(get_db)):
     """Elimina un horario puntual de la suscripción del usuario."""
     ok = await tspl_service.delete_my_subscription(db, user_id, hour)
     return {"ok": ok, "deleted": ok, "user_id": user_id, "hour": hour}
 
 
-@router.delete("/subscriptions/me/{user_id}")
+@router.delete("/subscriptions/me/{user_id}", dependencies=[Depends(require_auth_user_endpoints)])
 async def delete_all_my_subscriptions(user_id: int, db: AsyncSession = Depends(get_db)):
     """Elimina TODOS los horarios de la suscripción del usuario."""
     count = await tspl_service.delete_all_my_subscriptions(db, user_id)

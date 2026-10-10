@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
-from src.middleware.auth import require_auth
+from src.middleware.auth import require_auth, require_auth_user_endpoints
 from src.services import year_service
 from src.models.year_subscription import YearSubscription
 from src.schemas.year import (
@@ -71,7 +71,7 @@ async def get_year_state(db: AsyncSession = Depends(get_db)):
 # ── Subscriptions (public, user-facing) ──────────────────────────────────
 
 
-@router.get("/subscriptions/me/{user_id}", response_model=SubscriptionResponse)
+@router.get("/subscriptions/me/{user_id}", response_model=SubscriptionResponse, dependencies=[Depends(require_auth_user_endpoints)])
 async def get_my_subscription(user_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(YearSubscription).where(YearSubscription.user_id == user_id)
@@ -88,7 +88,7 @@ async def get_my_subscription(user_id: int, db: AsyncSession = Depends(get_db)):
 # ── User-owned subscription endpoints (no admin key required) ──────────────
 
 
-@router.post("/subscriptions/me/{user_id}", response_model=SubscriptionResponse)
+@router.post("/subscriptions/me/{user_id}", response_model=SubscriptionResponse, dependencies=[Depends(require_auth_user_endpoints)])
 async def set_my_subscription(user_id: int, body: SubscriptionCreate, db: AsyncSession = Depends(get_db)):
     """Create or update the caller's own subscription. No admin key required."""
     if body.user_id != user_id:
@@ -103,7 +103,7 @@ async def set_my_subscription(user_id: int, body: SubscriptionCreate, db: AsyncS
     )
 
 
-@router.delete("/subscriptions/me/{user_id}")
+@router.delete("/subscriptions/me/{user_id}", dependencies=[Depends(require_auth_user_endpoints)])
 async def delete_my_subscription(user_id: int, db: AsyncSession = Depends(get_db)):
     """Delete the caller's own subscription. No admin key required."""
     ok = await year_service.delete_my_subscription(db, user_id)

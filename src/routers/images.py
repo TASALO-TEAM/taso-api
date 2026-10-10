@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 
 from src.database import get_db
+from src.middleware.auth import require_auth_user_endpoints
 from src.services.image_capture import capture_and_store_image, get_latest_image
 from src.services.image_alert_service import (
     get_user_alert,
@@ -94,7 +95,7 @@ async def get_latest_eltoque_file(
     )
 
 
-@router.get("/alerts/{user_id}", response_model=APIResponse)
+@router.get("/alerts/{user_id}", response_model=APIResponse, dependencies=[Depends(require_auth_user_endpoints)])
 async def get_user_alert_endpoint(
     user_id: int,
     db: AsyncSession = Depends(get_db)
@@ -118,7 +119,7 @@ async def get_user_alert_endpoint(
     )
 
 
-@router.post("/alerts", response_model=APIResponse)
+@router.post("/alerts", response_model=APIResponse, dependencies=[Depends(require_auth_user_endpoints)])
 async def create_update_alert_endpoint(
     alert_data: AlertCreateSchema,
     db: AsyncSession = Depends(get_db)
@@ -167,7 +168,7 @@ async def create_update_alert_endpoint(
         )
 
 
-@router.delete("/alerts/{user_id}", response_model=APIResponse)
+@router.delete("/alerts/{user_id}", response_model=APIResponse, dependencies=[Depends(require_auth_user_endpoints)])
 async def delete_alert_endpoint(
     user_id: int,
     db: AsyncSession = Depends(get_db)
@@ -184,7 +185,7 @@ async def delete_alert_endpoint(
     )
 
 
-@router.get("/alerts", response_model=APIResponse)
+@router.get("/alerts", response_model=APIResponse, dependencies=[Depends(require_auth_user_endpoints)])
 async def get_all_enabled_alerts_endpoint(
     enabled: bool = Query(default=True),
     db: AsyncSession = Depends(get_db)
@@ -204,7 +205,7 @@ async def get_all_enabled_alerts_endpoint(
     )
 
 
-@router.post("/alerts/{user_id}/disable", response_model=APIResponse)
+@router.post("/alerts/{user_id}/disable", response_model=APIResponse, dependencies=[Depends(require_auth_user_endpoints)])
 async def disable_alert_endpoint(
     user_id: int,
     db: AsyncSession = Depends(get_db)
