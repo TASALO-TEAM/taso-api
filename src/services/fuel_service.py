@@ -193,18 +193,24 @@ async def get_fuel_rates(
         logger.warning("⚠️ [fuel] Scraper falló, usando caché stale de %s", _fuel_cache["fetched_at"])
         return _fuel_cache["rates"], _fuel_cache["fetched_at"]
 
-    # Fallback 2: últimos precios numéricos de la DB (sin metadatos ricos)
+    # Fallback 2: últimos precios numéricos de la DB (sin metadatos ricos).
+    # updated_at es la hora REAL de esa lectura (no la de la consulta), para que
+    # los clientes puedan avisar de datos desactualizados.
     logger.warning("⚠️ [fuel] Intentando fallback de DB...")
-    db_rates = await _get_from_db(db)
+    db_rates, db_fetched_at = await _get_from_db(db)
     if db_rates:
-        return db_rates, now
+        return db_rates, db_fetched_at or now
 
     logger.error("❌ [fuel] Sin datos de ninguna fuente")
     return {}, now
 
 
-async def _get_from_db(db: AsyncSession) -> dict[str, dict[str, Any]]:
-    """Fallback: lee los últimos precios numéricos de la DB."""
+async def _get_from_db(db: AsyncSession) -> tuple[dict[str, dict[str, Any]], Optional[datetime]]:
+    """Fallback: lee los últimos precios numéricos de la DB.
+
+    Returns:
+        (rates, fetched_at de la lectura más reciente o None si no hay datos)
+    """
     try:
         stmt = (
             select(RateSnapshot)
@@ -214,6 +220,10 @@ async def _get_from_db(db: AsyncSession) -> dict[str, dict[str, Any]]:
         )
         result = await db.execute(stmt)
         rows = result.scalars().all()
+
+        latest = rows[0].fetched_at if rows else None
+        if latest is not None and latest.tzinfo is None:
+            latest = latest.replace(tzinfo=timezone.utc)
 
         rates: dict[str, dict[str, Any]] = {}
         seen: set[str] = set()
@@ -235,7 +245,7 @@ async def _get_from_db(db: AsyncSession) -> dict[str, dict[str, Any]]:
                 "change_direction": "neutral",
                 "display_name": _DISPLAY_NAMES.get(row.currency, row.currency),
             }
-        return rates
+        return rates, latest
     except Exception as e:
         logger.error("❌ [fuel] Error en fallback DB: %s", e)
-        return {}
+        return {}, None
