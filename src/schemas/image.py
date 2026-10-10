@@ -61,7 +61,7 @@ class AlertCreateSchema(BaseModel):
     """Schema for creating/updating alert."""
     
     user_id: int
-    alert_time: str = Field(default="07:15", pattern=r"^\d{2}:\d{2}$")
+    alert_time: str = Field(default="07:30", pattern=r"^\d{2}:\d{2}$")
     format_type: str = Field(default="photo", pattern=r"^(photo|document)$")
     enabled: bool = True
     

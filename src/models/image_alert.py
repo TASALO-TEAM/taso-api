@@ -12,7 +12,7 @@ class UserImageAlert(Base):
     __tablename__ = "user_image_alerts"
 
     user_id = Column(BigInteger, primary_key=True)  # Telegram user_id
-    alert_time = Column(String(5), nullable=False, default="07:15")  # Formato "HH:MM"
+    alert_time = Column(String(5), nullable=False, default="07:30")  # Formato "HH:MM"
     format_type = Column(String(20), nullable=False, default="photo")  # "photo" | "document"
     enabled = Column(Boolean, nullable=False, default=True)
     created_at = Column(

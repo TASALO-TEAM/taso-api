@@ -38,7 +38,7 @@ async def get_user_alert(
 async def create_update_alert(
     db: AsyncSession,
     user_id: int,
-    alert_time: str = "07:15",
+    alert_time: str = "07:30",
     format_type: str = "photo",
     enabled: bool = True
 ) -> Optional[UserImageAlert]:
