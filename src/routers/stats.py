@@ -16,6 +16,7 @@ from src.schemas.stats import (
     UserLookupData,
     UserLookupResponse,
     ApiUsageStats,
+    UserStatsResponse,
 )
 from src.services import stats_service
 
@@ -176,3 +177,32 @@ async def lookup_user_by_username(
     if user_id is None:
         return UserLookupResponse(ok=True, data=None)
     return UserLookupResponse(ok=True, data=UserLookupData(user_id=user_id))
+
+@router.get("/users/{user_id}", response_model=UserStatsResponse)
+async def get_user_stats_by_id(
+    user_id: int,
+    window: Literal["24h", "7d", "30d"] = Query(
+        default="7d", description="Ventana de tiempo a consultar",
+    ),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(require_auth),
+) -> UserStatsResponse:
+    """
+    Uso de comandos de un único usuario (solo lectura).
+
+    Endpoint admin-only (require_auth vía X-API-Key, igual que el resto de
+    /api/v1/admin/*). Uso: taso-app (pantalla «Mis estadísticas»), que lo
+    llama únicamente con el user_id del initData validado de Telegram.
+    Declarado DESPUÉS de /users/ids y /users/lookup; user_id es int, así
+    que esas rutas fijas nunca se confunden con esta.
+
+    Args:
+        user_id: ID de Telegram del usuario
+        window: "24h", "7d" (default) o "30d"
+        db: Database session
+        api_key: API key de autenticación (admin)
+
+    Returns:
+        UserStatsResponse: totales, por comando, por fuente, primera/última vez
+    """
+    return await stats_service.get_user_command_stats(db, user_id=user_id, window=window)

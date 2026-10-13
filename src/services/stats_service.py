@@ -18,6 +18,8 @@ from src.schemas.stats import (
     ApiUsageStats,
     ApiUsageByClient,
     ApiUsageByEndpoint,
+    UserCommandCount,
+    UserStatsResponse,
 )
 
 # Ventanas soportadas por get_api_usage_stats / api_request_log purge
@@ -444,3 +446,82 @@ async def purge_old_api_request_logs(session: AsyncSession) -> int:
     result = await session.execute(stmt)
     await session.commit()
     return result.rowcount or 0
+
+async def get_user_command_stats(
+    session: AsyncSession,
+    user_id: int,
+    window: str = "7d",
+    top: int = 8,
+) -> UserStatsResponse:
+    """
+    Resume el uso de comandos de UN usuario en una ventana de tiempo.
+
+    Solo lectura sobre bot_command_stats (ventana) y bot_users (histórico).
+    Si el usuario no existe en ninguna de las dos devuelve found=False con
+    ceros, en vez de 404, para que el cliente pinte un estado vacío.
+
+    Args:
+        session: SQLAlchemy async session
+        user_id: ID de Telegram del usuario
+        window: "24h", "7d" o "30d" (otro valor cae a "7d")
+        top: máximo de elementos en by_command y by_source
+    """
+    delta = _WINDOW_TIMEDELTA.get(window, _WINDOW_TIMEDELTA["7d"])
+    window = window if window in _WINDOW_TIMEDELTA else "7d"
+    now = datetime.now(timezone.utc)
+    since = now - delta
+
+    in_window = and_(BotCommandStat.user_id == user_id, BotCommandStat.created_at >= since)
+
+    totals = (
+        await session.execute(
+            select(
+                func.count(BotCommandStat.id),
+                func.coalesce(func.sum(case((BotCommandStat.success.is_(True), 1), else_=0)), 0),
+            ).where(in_window)
+        )
+    ).first()
+    total = int(totals[0] or 0)
+    successful = int(totals[1] or 0)
+    failed = total - successful
+
+    cmd_rows = (
+        await session.execute(
+            select(BotCommandStat.command, func.count(BotCommandStat.id).label("n"))
+            .where(in_window)
+            .group_by(BotCommandStat.command)
+            .order_by(func.count(BotCommandStat.id).desc(), BotCommandStat.command)
+            .limit(top)
+        )
+    ).all()
+
+    src_rows = (
+        await session.execute(
+            select(BotCommandStat.source, func.count(BotCommandStat.id).label("n"))
+            .where(in_window, BotCommandStat.source.is_not(None), BotCommandStat.source != "")
+            .group_by(BotCommandStat.source)
+            .order_by(func.count(BotCommandStat.id).desc(), BotCommandStat.source)
+            .limit(top)
+        )
+    ).all()
+
+    user = (
+        await session.execute(select(BotUser).where(BotUser.user_id == user_id))
+    ).scalar_one_or_none()
+
+    return UserStatsResponse(
+        ok=True,
+        user_id=user_id,
+        window=window,
+        found=bool(user is not None or total > 0),
+        total_commands=total,
+        successful=successful,
+        failed=failed,
+        success_rate=round(successful * 100.0 / total, 1) if total else 0.0,
+        by_command=[UserCommandCount(name=r[0], count=int(r[1])) for r in cmd_rows],
+        by_source=[UserCommandCount(name=r[0], count=int(r[1])) for r in src_rows],
+        total_commands_all_time=int(user.total_commands or 0) if user is not None else 0,
+        first_seen=user.first_seen if user is not None else None,
+        last_seen=user.last_seen if user is not None else None,
+        updated_at=now,
+    )

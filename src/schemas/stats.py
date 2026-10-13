@@ -145,3 +145,33 @@ class UserLookupResponse(BaseModel):
 
     ok: bool = Field(True, description="Estado de la respuesta")
     data: Optional[UserLookupData] = Field(None, description="Datos del usuario encontrado, o None")
+
+class UserCommandCount(BaseModel):
+    """Cuántas veces un usuario ejecutó un comando (o consultó una fuente)."""
+
+    name: str = Field(..., description="Comando (o fuente) tal como se registró")
+    count: int = Field(..., description="Veces en la ventana consultada")
+
+
+class UserStatsResponse(BaseModel):
+    """Uso de comandos de UN usuario (GET /users/{user_id}).
+
+    Endpoint admin-only (require_auth vía X-API-Key). Lo consume taso-app,
+    que solo pasa el user_id del initData validado de Telegram; nunca un id
+    enviado por el cliente. Solo lectura sobre bot_command_stats / bot_users.
+    """
+
+    ok: bool = Field(True, description="Estado de la respuesta")
+    user_id: int = Field(..., description="ID del usuario (Telegram)")
+    window: str = Field(..., description="Ventana consultada: 24h | 7d | 30d")
+    found: bool = Field(..., description="False si el usuario no está registrado y no tiene comandos")
+    total_commands: int = Field(0, description="Comandos del usuario en la ventana")
+    successful: int = Field(0, description="Comandos con éxito en la ventana")
+    failed: int = Field(0, description="Comandos con error en la ventana")
+    success_rate: float = Field(0.0, description="Porcentaje de éxito (0-100); 0 si no hay comandos")
+    by_command: list[UserCommandCount] = Field(default_factory=list, description="Top comandos en la ventana")
+    by_source: list[UserCommandCount] = Field(default_factory=list, description="Top fuentes consultadas en la ventana")
+    total_commands_all_time: int = Field(0, description="Total histórico de comandos (bot_users)")
+    first_seen: Optional[datetime] = Field(None, description="Primera vez que se vio al usuario")
+    last_seen: Optional[datetime] = Field(None, description="Última vez que se vio al usuario")
+    updated_at: datetime = Field(..., description="Cuándo se generaron las estadísticas")
