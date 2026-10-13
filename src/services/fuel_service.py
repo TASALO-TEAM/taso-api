@@ -31,7 +31,12 @@ logger = logging.getLogger(__name__)
 _fuel_cache: dict[str, Any] = {
     "rates": {},
     "fetched_at": None,
+    "failed_at": None,  # último intento de scraping fallido (para no reintentar en cada request)
 }
+
+# Si eltoque.com bloquea al scraper (403 de Cloudflare), no se vuelve a intentar en cada
+# petición: se sirve el fallback y se reintenta pasado este tiempo.
+FAIL_BACKOFF_MINUTES = 10
 
 
 def _is_stale(fetched_at: Optional[datetime], now: datetime, max_age_minutes: int) -> bool:
@@ -39,6 +44,13 @@ def _is_stale(fetched_at: Optional[datetime], now: datetime, max_age_minutes: in
         return True
     delta = now - fetched_at
     return delta.total_seconds() > max_age_minutes * 60
+
+
+def _in_backoff(failed_at: Optional[datetime], now: datetime) -> bool:
+    """True si el último scraping falló hace menos de FAIL_BACKOFF_MINUTES."""
+    if failed_at is None:
+        return False
+    return (now - failed_at).total_seconds() < FAIL_BACKOFF_MINUTES * 60
 
 
 # ── Normalización ─────────────────────────────────────────────────────────────
@@ -174,19 +186,25 @@ async def get_fuel_rates(
                      now - _fuel_cache["fetched_at"])
         return _fuel_cache["rates"], _fuel_cache["fetched_at"]
 
-    # Scrapear datos frescos
-    logger.info("⛽ [fuel] Caché stale o vacía, iniciando scraping...")
-    raw = await fetch_fuel()
+    # Scrapear datos frescos (salvo que el último intento haya fallado hace poco)
+    if _in_backoff(_fuel_cache["failed_at"], now):
+        logger.debug("⏳ [fuel] Último scraping falló hace poco; se omite y se usa el fallback")
+    else:
+        logger.info("⛽ [fuel] Caché stale o vacía, iniciando scraping...")
+        raw = await fetch_fuel()
 
-    if raw:
-        rates = _normalize_fuel_rates(raw)
-        if rates:
-            await _enrich_with_prev_rate(db, rates)
-            await _save_to_db(db, rates)
-            _fuel_cache["rates"] = rates
-            _fuel_cache["fetched_at"] = now
-            logger.info("✅ [fuel] %d tipos de combustible obtenidos", len(rates))
-            return rates, now
+        if raw:
+            rates = _normalize_fuel_rates(raw)
+            if rates:
+                await _enrich_with_prev_rate(db, rates)
+                await _save_to_db(db, rates)
+                _fuel_cache["rates"] = rates
+                _fuel_cache["fetched_at"] = now
+                _fuel_cache["failed_at"] = None
+                logger.info("✅ [fuel] %d tipos de combustible obtenidos", len(rates))
+                return rates, now
+
+        _fuel_cache["failed_at"] = now
 
     # Fallback 1: caché en memoria (aunque stale)
     if _fuel_cache["rates"]:
