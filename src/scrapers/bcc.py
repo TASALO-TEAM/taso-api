@@ -10,7 +10,7 @@ from typing import Optional, Dict, List
 # Deshabilitar advertencias de certificados SSL (común en sitios .cu)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-BCC_URL = "https://www.bc.gob.cu"
+BCC_URL = "https://www.bc.gob.cu/tasas-de-cambio"
 DEFAULT_TIMEOUT = 5.0
 
 
