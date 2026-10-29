@@ -67,7 +67,7 @@ def _routes_requiring_user_auth():
     protegidas = []
     for route in real_app.routes:
         path = getattr(route, "path", "")
-        es_usuario = "/images/alerts" in path or "/subscriptions/me/" in path
+        es_usuario = "/images/alerts" in path or "/subscriptions/me/" in path or path.endswith("/eltoque/capture")
         if es_usuario:
             deps = [d.dependency for d in getattr(route, "dependencies", [])]
             protegidas.append((path, require_auth_user_endpoints in deps))

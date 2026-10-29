@@ -28,7 +28,7 @@ from src.schemas.image import (
 router = APIRouter(prefix="/api/v1/images", tags=["Images"])
 
 
-@router.post("/eltoque/capture", response_model=APIResponse)
+@router.post("/eltoque/capture", response_model=APIResponse, dependencies=[Depends(require_auth_user_endpoints)])
 async def capture_eltoque_image_endpoint(
     db: AsyncSession = Depends(get_db)
 ):
