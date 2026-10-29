@@ -1,19 +1,19 @@
-"""Tests for the /year/* public (e2e) endpoints.
+﻿"""Tests for the /year/* public (e2e) endpoints.
 
 Uses the conftest.py client fixture (sync TestClient backed by the production
 Supabase PostgreSQL database via the app lifespan).
 
-No SQLite — Supabase PostgreSQL is required for async FastAPI tests.
+No SQLite â€” Supabase PostgreSQL is required for async FastAPI tests.
 """
 
 import os
 import uuid
 import pytest
 
-from src.config import settings
+from src.config import get_settings
 from src.main import app
 
-_PROD_URL = os.environ.get("DATABASE_URL") or settings.database_url
+_PROD_URL = os.environ.get("DATABASE_URL") or get_settings().database_url
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -30,7 +30,7 @@ def _clean_year_tables():
     original = os.environ.get("DATABASE_URL")
     os.environ["DATABASE_URL"] = _PROD_URL
     yield
-    # Leave production data untouched — tests only read + create-idempotent
+    # Leave production data untouched â€” tests only read + create-idempotent
     os.environ["DATABASE_URL"] = original or _PROD_URL
 
 
@@ -42,7 +42,7 @@ def client():
         yield tc
 
 
-# ── E2E tests (public endpoints, no auth required) ──────────────────────────
+# â”€â”€ E2E tests (public endpoints, no auth required) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def test_get_today_quote(client):
     r = client.get("/api/v1/year/quotes/today")
