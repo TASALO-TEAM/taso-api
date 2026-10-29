@@ -1,7 +1,7 @@
 """Sistema de logging con rotación por tamaño y archivado por fecha (TASALO-API).
 
 Logs activos (siempre en `logs/`):
-    logs/taso-api.log          -> todo el log, nivel DEBUG+ (INFO+ en consola)
+    logs/taso-api.log          -> todo el log, nivel INFO+ (igual en consola)
     logs/taso-api-errors.log   -> solo ERROR+, retención igual pero aislado
 
 Logs archivados (al rotar por tamaño, no se usan sufijos numéricos):
@@ -140,6 +140,10 @@ def setup_logging(level: int = logging.INFO) -> logging.Logger:
     console_handler.setLevel(level)
     root_logger.addHandler(console_handler)
 
+    # httpx/httpcore loguean la URL completa (incluye el token de Telegram en sendMessage).
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
     if _running_under_pytest():
         # Evita crear logs/ y logs/archive/ durante los tests.
         return root_logger
@@ -154,7 +158,7 @@ def setup_logging(level: int = logging.INFO) -> logging.Logger:
         encoding="utf-8",
     )
     file_handler.setFormatter(formatter)
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(logging.INFO)
     root_logger.addHandler(file_handler)
 
     error_handler = DatedRotatingFileHandler(

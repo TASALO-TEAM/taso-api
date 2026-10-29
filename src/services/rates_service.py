@@ -7,6 +7,7 @@ from typing import Any, Literal
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.scrapers.eltoque import fetch_eltoque
@@ -536,6 +537,17 @@ async def get_latest_rates(
 
 
 async def get_source_rates(
+    session: AsyncSession, source: str, max_age_minutes: int = 120
+) -> tuple[dict[str, dict], datetime | None]:
+    """Como _get_source_rates, pero un fallo de DB (p. ej. statement timeout) devuelve ({}, None)."""
+    try:
+        return await _get_source_rates(session, source, max_age_minutes)
+    except SQLAlchemyError as e:
+        logger.error(f"DB error in get_source_rates for {source}: {e}")
+        return {}, None
+
+
+async def _get_source_rates(
     session: AsyncSession, source: str, max_age_minutes: int = 120
 ) -> tuple[dict[str, dict], datetime | None]:
     """

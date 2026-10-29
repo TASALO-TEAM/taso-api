@@ -10,13 +10,10 @@ import os
 import uuid
 import pytest
 
+from src.config import settings
 from src.main import app
 
-_PROD_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+asyncpg://postgres:Mendeleyev931225@db.kkvrjpoxtauwhjrsznkd.supabase.co:5432/postgres"
-    "?sslmode=require&sslaccept=accept_all",
-)
+_PROD_URL = os.environ.get("DATABASE_URL") or settings.database_url
 
 
 @pytest.fixture(scope="session", autouse=True)

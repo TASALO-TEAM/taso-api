@@ -233,3 +233,14 @@ async def test_get_cubanomic_cached_cache_hit():
     # Verify fetch was NOT called (cache hit)
     assert result["ok"] is True
     assert result["data"]["USD"]["rate"] == 370.0  # Cached value
+
+
+async def test_get_source_rates_db_error_returns_empty():
+    """Un fallo de DB (statement timeout) no propaga: devuelve ({}, None)."""
+    from sqlalchemy.exc import DBAPIError
+    from src.services.rates_service import get_source_rates
+
+    session = AsyncMock()
+    session.execute.side_effect = DBAPIError("SELECT 1", {}, Exception("statement timeout"))
+
+    assert await get_source_rates(session, "eltoque") == ({}, None)
