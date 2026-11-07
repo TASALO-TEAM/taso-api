@@ -8,7 +8,8 @@ y este proyecto se adhiere a [Versionado Semántico](https://semver.org/lang/es/
 ## [Unreleased]
 
 ### Added
-- **QvaPay como fuente de tasas**: nuevo scraper `src/scrapers/qvapay.py` (9 métodos de pago, compra y venta), `GET /api/v1/tasas/qvapay`, clave `qvapay` en `/tasas/latest` y `source=qvapay` en `/tasas/history`. `rate` es el promedio compra/venta.
+- **QvaPay como fuente de tasas**: nuevo scraper `src/scrapers/qvapay.py` (10 métodos de pago, compra y venta), `GET /api/v1/tasas/qvapay`, clave `qvapay` en `/tasas/latest` y `source=qvapay` en `/tasas/history`. `rate` es el promedio compra/venta.
+- **QvaPay: nuevo método `CUPCASH`** (CUP en efectivo, categoría Cash de QvaPay).
 
 ### Changed
 - **Ciclo de refresco de 5 a 15 minutos** (`REFRESH_INTERVAL_MINUTES`) para todas las fuentes; el indicador `change` compara contra 15 min atrás.

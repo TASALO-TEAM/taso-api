@@ -267,7 +267,7 @@ async def get_qvapay_rates(
     Obtiene las últimas tasas P2P de QvaPay por método de pago.
 
     Cada valor es "cuánto de ese método por 1 USD de QvaPay" (CUP, MLC, TROPIPAY, ETECSA,
-    ZELLE, CLASICA, BOLSATM, BANDECPREPAGO, SBERBANK); no todos son CUP por unidad.
+    ZELLE, CLASICA, BOLSATM, BANDECPREPAGO, SBERBANK, CUPCASH); no todos son CUP por unidad.
     ``rate`` es el promedio (compra + venta) / 2; ``buy`` y ``sell`` son los promedios de
     compra y venta. Los métodos sin operaciones recientes no aparecen.
 

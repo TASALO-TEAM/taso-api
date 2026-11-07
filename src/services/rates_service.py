@@ -81,7 +81,7 @@ async def fetch_all_sources() -> dict[str, Any]:
     - Binance: 10s (API pública rápida)
     - CADECA: 8s (web scraper inestable)
     - BCC: 10s (web scraper oficial)
-    - QvaPay: 12s (9 consultas P2P en paralelo)
+    - QvaPay: 12s (10 consultas P2P en paralelo)
 
     Returns:
         dict con claves 'eltoque', 'binance', 'cadeca', 'bcc', 'qvapay'

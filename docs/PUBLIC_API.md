@@ -127,7 +127,7 @@ Igual formato, sin el wrapper de las 4 fuentes:
 
 ### `GET /api/v1/tasas/qvapay`
 
-Tasas P2P de QvaPay por método de pago (`CUP`, `MLC`, `TROPIPAY`, `ETECSA`, `ZELLE`, `CLASICA`, `BOLSATM`, `BANDECPREPAGO`, `SBERBANK`). Mismo formato que `/cadeca`: `rate` es el **promedio** `(compra + venta) / 2`, y `buy` / `sell` son los promedios de compra y venta (si falta un lado, `rate` es el que haya). El `change` se calcula sobre el promedio.
+Tasas P2P de QvaPay por método de pago (`CUP`, `MLC`, `TROPIPAY`, `ETECSA`, `ZELLE`, `CLASICA`, `BOLSATM`, `BANDECPREPAGO`, `SBERBANK`, `CUPCASH`). Mismo formato que `/cadeca`: `rate` es el **promedio** `(compra + venta) / 2`, y `buy` / `sell` son los promedios de compra y venta (si falta un lado, `rate` es el que haya). El `change` se calcula sobre el promedio.
 
 > **Unidad:** cada valor es *cuánto de ese método por 1 USD de QvaPay*. No todos son CUP por unidad (ej. `MLC` ~1.45, `ZELLE` ~1.02). Los métodos sin operaciones recientes (`SBERBANK` casi siempre) no aparecen.
 

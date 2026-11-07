@@ -24,6 +24,7 @@ QVAPAY_COINS: Dict[str, str] = {
     "BOLSATM": "BOLSATM",
     "BANDECPREPAGO": "BANDECPREPAGO",
     "SBERBANK": "SBERBANK",
+    "CUPCASH": "CUPCASH",  # CUP en efectivo (categoría Cash); pocas operaciones, ventana de hasta 168 h
 }
 
 
