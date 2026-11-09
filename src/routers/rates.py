@@ -10,7 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database import get_db
 from src.redis_client import RedisClient, get_redis
 from src.services import fuel_service, history_service, rates_service
+from src.scrapers.qvapay import qvapay_meta
 from src.schemas.rates import (
+    QvaPayRate,
+    QvaPayRatesResponse,
     CurrencyRate,
     LatestRatesResponse,
     LatestRatesData,
@@ -98,8 +101,10 @@ async def get_latest_rates(
         for currency, rate_info in rates.items():
             if source in ('cadeca', 'qvapay'):
                 # CADECA: rate = venta. QvaPay: rate = promedio (compra + venta) / 2,
-                # ya calculado por el servicio. Ambas exponen buy/sell explícitos.
-                formatted_rates[currency] = CurrencyRate(
+                # ya calculado por el servicio. Ambas exponen buy/sell explícitos; QvaPay suma name/kind/count.
+                rate_cls = QvaPayRate if source == 'qvapay' else CurrencyRate
+                extra = qvapay_meta(currency) if source == 'qvapay' else {}
+                formatted_rates[currency] = rate_cls(
                     rate=(
                         rate_info.get('rate', 0) if source == 'qvapay'
                         else rate_info.get('sell', 0)
@@ -107,7 +112,8 @@ async def get_latest_rates(
                     buy=rate_info.get('buy'),
                     sell=rate_info.get('sell'),
                     change=rate_info.get('change', 'neutral'),
-                    prev_rate=rate_info.get('prev_rate')
+                    prev_rate=rate_info.get('prev_rate'),
+                    **extra,
                 )
             else:
                 # Otras fuentes usan rate único
@@ -253,7 +259,7 @@ async def get_bcc_rates(
     )
 
 
-@router.get("/qvapay", response_model=SourceRatesResponse)
+@router.get("/qvapay", response_model=QvaPayRatesResponse)
 async def get_qvapay_rates(
     db: AsyncSession = Depends(get_db),
     max_age_minutes: int = Query(
@@ -262,7 +268,7 @@ async def get_qvapay_rates(
         le=1440,
         description="Máxima edad de datos en minutos (fallback a histórico)"
     )
-) -> SourceRatesResponse:
+) -> QvaPayRatesResponse:
     """
     Obtiene las últimas tasas P2P de QvaPay por método de pago.
 
@@ -277,15 +283,16 @@ async def get_qvapay_rates(
 
     formatted_rates = {}
     for currency, rate_info in rates.items():
-        formatted_rates[currency] = CurrencyRate(
+        formatted_rates[currency] = QvaPayRate(
             rate=rate_info.get('rate', 0) or 0,
             buy=rate_info.get('buy'),
             sell=rate_info.get('sell'),
             change=rate_info.get('change', 'neutral'),
-            prev_rate=rate_info.get('prev_rate')
+            prev_rate=rate_info.get('prev_rate'),
+            **qvapay_meta(currency),
         )
 
-    return SourceRatesResponse(
+    return QvaPayRatesResponse(
         source='qvapay',
         rates=formatted_rates,
         updated_at=updated_at or datetime.now(timezone.utc)

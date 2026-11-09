@@ -15,12 +15,30 @@ class CurrencyRate(BaseModel):
     prev_rate: float | None = Field(None, description="Tasa anterior")
 
 
+class QvaPayRate(CurrencyRate):
+    """Tasa de un método de pago de QvaPay, con datos descriptivos para que el cliente no tenga que conocer cada moneda."""
+
+    name: str | None = Field(None, description="Nombre legible del método según QvaPay (p. ej. 'CUP Cash')")
+    kind: Literal["bank", "cash", "wallet"] | None = Field(
+        None, description="Tipo de método: bank (banco), cash (efectivo) o wallet (billetera)"
+    )
+    count: int | None = Field(
+        None, description="Operaciones recientes que respaldan el promedio (pocas = promedio poco fiable)"
+    )
+
+
 class SourceRatesResponse(BaseModel):
     """Respuesta para tasas de una fuente específica."""
 
     source: str = Field(..., description="Nombre de la fuente (eltoque, cadeca, bcc, binance, qvapay)")
     rates: dict[str, CurrencyRate] = Field(..., description="Tasas por moneda")
     updated_at: datetime = Field(..., description="Cuándo se actualizaron los datos")
+
+
+class QvaPayRatesResponse(SourceRatesResponse):
+    """Respuesta de /tasas/qvapay: igual que SourceRatesResponse pero con name/kind/count por método."""
+
+    rates: dict[str, QvaPayRate] = Field(..., description="Tasas por método de pago")
 
 
 class LatestRatesData(BaseModel):
@@ -30,7 +48,7 @@ class LatestRatesData(BaseModel):
     cadeca: dict[str, CurrencyRate] = Field(default_factory=dict, description="Tasas de CADECA")
     bcc: dict[str, CurrencyRate] = Field(default_factory=dict, description="Tasas de BCC")
     binance: dict[str, CurrencyRate] = Field(default_factory=dict, description="Tasas de Binance")
-    qvapay: dict[str, CurrencyRate] = Field(
+    qvapay: dict[str, QvaPayRate] = Field(
         default_factory=dict,
         description="Tasas P2P de QvaPay por método de pago (rate = promedio compra/venta, más buy y sell)",
     )
