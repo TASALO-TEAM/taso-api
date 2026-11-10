@@ -66,10 +66,10 @@ async def _fetch_safe(coro_func, timeout_secs: int, source_name: str) -> Any:
     try:
         return await asyncio.wait_for(coro_func(), timeout=timeout_secs)
     except asyncio.TimeoutError:
-        print(f"⚠️ Timeout en {source_name} ({timeout_secs}s)")
+        logger.warning(f"⚠️ Timeout en {source_name} ({timeout_secs}s)")
         return None
     except Exception as e:
-        print(f"❌ Error en {source_name}: {e}")
+        logger.error(f"❌ Error en {source_name}: {e}")
         return None
 
 
@@ -201,7 +201,7 @@ async def save_snapshot(session: AsyncSession, source: str, data: Any) -> None:
     Legacy pattern: save_*_history() de legacy/tasa_manager.py
     """
     if data is None:
-        print(f"⚠️ No se guardó snapshot de {source}: datos None")
+        logger.warning(f"⚠️ No se guardó snapshot de {source}: datos None")
         return
 
     # Normalizar datos según fuente
@@ -214,7 +214,7 @@ async def save_snapshot(session: AsyncSession, source: str, data: Any) -> None:
     elif source == "qvapay":
         normalized = _normalize_qvapay_data(data)
     else:
-        print(f"⚠️ Fuente desconocida: {source}")
+        logger.warning(f"⚠️ Fuente desconocida: {source}")
         return
 
     # Crear registros
@@ -232,7 +232,7 @@ async def save_snapshot(session: AsyncSession, source: str, data: Any) -> None:
         snapshots.append(snapshot)
 
     session.add_all(snapshots)
-    print(f"✅ Guardados {len(snapshots)} snapshots de {source}")
+    logger.info(f"✅ Guardados {len(snapshots)} snapshots de {source}")
 
 
 async def _get_previous_snapshot(
@@ -456,7 +456,7 @@ async def _compute_latest_rates(
 
         # ESTRATEGIA 2: Fallback - si no hay datos en este timestamp, buscar últimos disponibles
         if not snapshots:
-            print(f"⚠️ {source}: Sin datos en timestamp máximo, buscando histórico...")
+            logger.warning(f"⚠️ {source}: Sin datos en timestamp máximo, buscando histórico...")
 
             # Buscar últimos 15 snapshots disponibles (cualquier fecha)
             fallback_stmt = (
@@ -474,13 +474,13 @@ async def _compute_latest_rates(
                 fallback_snapshots = []
 
             if not fallback_snapshots:
-                print(
+                logger.error(
                     f"❌ {source}: Sin datos históricos en DB - retornando dict vacío"
                 )
                 result[source] = {}
                 continue
             else:
-                print(
+                logger.info(
                     f"✅ {source}: Usando fallback con {len(fallback_snapshots)} registros históricos"
                 )
 
@@ -492,7 +492,7 @@ async def _compute_latest_rates(
                         latest_by_currency[snap.currency] = snap
 
                 snapshots = list(latest_by_currency.values())
-                print(
+                logger.info(
                     f"✅ {source}: {len(snapshots)} monedas únicas después de agrupar"
                 )
 
@@ -501,11 +501,11 @@ async def _compute_latest_rates(
             data_age = now - snapshots[0].fetched_at
             age_minutes = int(data_age.total_seconds() / 60)
             if age_minutes > max_age_minutes:
-                print(
+                logger.warning(
                     f"⚠️ {source}: Datos con {age_minutes}min de antigüedad (stale > {max_age_minutes}min)"
                 )
             else:
-                print(f"✅ {source}: Datos frescos ({age_minutes}min)")
+                logger.info(f"✅ {source}: Datos frescos ({age_minutes}min)")
 
         # Tasas anteriores de todas las monedas de la fuente en una sola consulta
         prev_map = await _previous_rates_map(session, source, snapshots)
@@ -516,7 +516,7 @@ async def _compute_latest_rates(
             for snap in snapshots:
                 # Validar que sell_rate no sea None
                 if snap.sell_rate is None:
-                    print(f"⚠️ {source}/{snap.currency}: sell_rate es None, saltando")
+                    logger.warning(f"⚠️ {source}/{snap.currency}: sell_rate es None, saltando")
                     continue
 
                 rate = float(snap.sell_rate)
@@ -534,13 +534,13 @@ async def _compute_latest_rates(
 
             result[source] = formatted
             if not formatted:
-                print(f"⚠️ {source}: No se pudo formatear ningún dato válido")
+                logger.warning(f"⚠️ {source}: No se pudo formatear ningún dato válido")
 
         elif source == "qvapay":
             formatted = {}
             for snap in snapshots:
                 if snap.buy_rate is None and snap.sell_rate is None:
-                    print(
+                    logger.warning(
                         f"⚠️ {source}/{snap.currency}: buy_rate y sell_rate son None, saltando"
                     )
                     continue
@@ -555,11 +555,11 @@ async def _compute_latest_rates(
 
             result[source] = formatted
             if not formatted:
-                print(f"⚠️ {source}: No se pudo formatear ningún dato válido")
+                logger.warning(f"⚠️ {source}: No se pudo formatear ningún dato válido")
 
     # Debug final
     total_rates = sum(len(rates) for rates in result.values())
-    print(f"✅ get_latest_rates: {total_rates} tasas en total de 5 fuentes")
+    logger.info(f"✅ get_latest_rates: {total_rates} tasas en total de 5 fuentes")
 
     return result
 
@@ -625,7 +625,7 @@ async def _get_source_rates(
 
     # ESTRATEGIA 2: Fallback - buscar histórico si no hay datos recientes
     if not snapshots:
-        print(f"⚠️ {source}: Sin datos recientes, buscando histórico...")
+        logger.warning(f"⚠️ {source}: Sin datos recientes, buscando histórico...")
 
         fallback_stmt = (
             select(RateSnapshot)
@@ -637,10 +637,10 @@ async def _get_source_rates(
         fallback_snapshots = fallback_result.scalars().all()
 
         if not fallback_snapshots:
-            print(f"❌ {source}: Sin datos históricos - retornando dict vacío")
+            logger.error(f"❌ {source}: Sin datos históricos - retornando dict vacío")
             return {}, None
         else:
-            print(
+            logger.info(
                 f"✅ {source}: Usando fallback con {len(fallback_snapshots)} registros"
             )
 
@@ -658,9 +658,9 @@ async def _get_source_rates(
     age_minutes = int(data_age.total_seconds() / 60)
 
     if age_minutes > max_age_minutes:
-        print(f"⚠️ {source}: Datos con {age_minutes}min de antigüedad (stale)")
+        logger.warning(f"⚠️ {source}: Datos con {age_minutes}min de antigüedad (stale)")
     else:
-        print(f"✅ {source}: Datos frescos ({age_minutes}min)")
+        logger.info(f"✅ {source}: Datos frescos ({age_minutes}min)")
 
     # Tasas anteriores de todas las monedas en una sola consulta
     prev_map = await _previous_rates_map(session, source, snapshots)
@@ -672,7 +672,7 @@ async def _get_source_rates(
         if source in ["eltoque", "binance", "bcc"]:
             # Validar que sell_rate no sea None
             if snap.sell_rate is None:
-                print(f"⚠️ {source}/{snap.currency}: sell_rate es None, saltando")
+                logger.warning(f"⚠️ {source}/{snap.currency}: sell_rate es None, saltando")
                 continue
 
             rate = float(snap.sell_rate)
@@ -685,7 +685,7 @@ async def _get_source_rates(
 
         elif source == "qvapay":
             if snap.buy_rate is None and snap.sell_rate is None:
-                print(
+                logger.warning(
                     f"⚠️ {source}/{snap.currency}: buy_rate y sell_rate son None, saltando"
                 )
                 continue
@@ -696,7 +696,7 @@ async def _get_source_rates(
                 formatted[snap.currency] = info
 
     if not formatted:
-        print(f"⚠️ {source}: No se pudo formatear ningún dato válido")
+        logger.warning(f"⚠️ {source}: No se pudo formatear ningún dato válido")
 
     return formatted, updated_at
 
@@ -771,7 +771,7 @@ async def fetch_cubanomic_daily(db: AsyncSession) -> dict:
 
         if not result.get("ok"):
             error_msg = result.get("error", {}).get("message", "Unknown error")
-            print(f"❌ 🇨🇺 Cubanomic fetch failed: {error_msg}")
+            logger.error(f"❌ 🇨🇺 Cubanomic fetch failed: {error_msg}")
             return {"ok": False, "error": error_msg}
 
         data = result.get("data", {})
@@ -784,7 +784,7 @@ async def fetch_cubanomic_daily(db: AsyncSession) -> dict:
         mlc_rate = data.get("MLC", {}).get("rate")
 
         if not all([usd_rate, eur_rate, mlc_rate]):
-            print(f"❌ 🇨🇺 Cubanomic: Missing required rates")
+            logger.error(f"❌ 🇨🇺 Cubanomic: Missing required rates")
             return {"ok": False, "error": "Missing required rates"}
 
         # Parse updated_at timestamp
@@ -795,7 +795,7 @@ async def fetch_cubanomic_daily(db: AsyncSession) -> dict:
 
         # Save snapshot
         await save_cubanomic_snapshot(db, usd_rate, eur_rate, mlc_rate, fetched_at)
-        print(f"✅ 🇨🇺 Cubanomic snapshot saved: USD={usd_rate}, EUR={eur_rate}, MLC={mlc_rate}")
+        logger.info(f"✅ 🇨🇺 Cubanomic snapshot saved: USD={usd_rate}, EUR={eur_rate}, MLC={mlc_rate}")
 
         # Save historical data points
         history_count = 0
@@ -831,7 +831,7 @@ async def fetch_cubanomic_daily(db: AsyncSession) -> dict:
             if snapshots:
                 db.add_all(snapshots)
                 history_count = len(snapshots)
-                print(f"✅ 🇨🇺 Cubanomic history saved: {history_count} points")
+                logger.info(f"✅ 🇨🇺 Cubanomic history saved: {history_count} points")
 
         await db.commit()
 
@@ -843,7 +843,7 @@ async def fetch_cubanomic_daily(db: AsyncSession) -> dict:
         }
 
     except Exception as e:
-        print(f"❌ 🇨🇺 Cubanomic fetch error: {e}")
+        logger.error(f"❌ 🇨🇺 Cubanomic fetch error: {e}")
         await db.rollback()
         return {"ok": False, "error": str(e)}
 
@@ -872,7 +872,7 @@ async def save_cubanomic_snapshot(
         fetched_at=fetched_at,
     )
     db.add(snapshot)
-    print(f"✅ 🇨🇺 CubanomicRate created: {snapshot}")
+    logger.info(f"✅ 🇨🇺 CubanomicRate created: {snapshot}")
 
 
 async def get_cubanomic_cached(
