@@ -94,18 +94,44 @@ _TRACKING_EXCLUDED_PATHS = {"/api/v1/health", "/docs", "/openapi.json", "/redoc"
 _TRACKING_EXCLUDED_PREFIXES = ("/api/v1/admin/stats",)
 
 
-async def _log_request(method: str, path: str, status_code: int, duration_ms: int, client_id: str) -> None:
-    """Persiste una entrada de api_request_log. Fire-and-forget desde el middleware."""
-    from src.services import stats_service
+# Buffer de api_request_log: se escribe en lotes (1 INSERT cada _LOG_FLUSH_SECS) en vez de
+# una conexion del pool por peticion. Acotado para no crecer si la BD esta caida.
+_LOG_FLUSH_SECS = 10
+_LOG_BUFFER_MAX = 1000
+_log_buffer: list[tuple] = []
 
+
+def _enqueue_request(method: str, path: str, status_code: int, duration_ms: int, client_id: str) -> None:
+    """Encola una entrada de api_request_log (sin I/O, no bloquea la respuesta)."""
+    if len(_log_buffer) < _LOG_BUFFER_MAX:
+        _log_buffer.append((method, path, status_code, duration_ms, client_id))
+
+
+async def _flush_request_log() -> None:
+    """Vuelca el buffer a la BD en un solo commit. Si falla descarta el lote (es solo telemetria)."""
+    if not _log_buffer:
+        return
+    batch = _log_buffer[:]
+    del _log_buffer[:len(batch)]
+    from datetime import datetime, timezone
+    from src.models.api_request_log import ApiRequestLog
+
+    now = datetime.now(timezone.utc)
     try:
         async with database.async_session_factory() as session:
-            await stats_service.log_api_request(
-                session, method=method, path=path,
-                status_code=status_code, duration_ms=duration_ms, client_id=client_id,
+            session.add_all(
+                ApiRequestLog(method=m, path=p, status_code=c, duration_ms=d, client_id=cl, created_at=now)
+                for (m, p, c, d, cl) in batch
             )
+            await session.commit()
     except Exception as e:
-        logger.debug("⚠️ No se pudo registrar api_request_log para %s %s: %s", method, path, e)
+        logger.debug("No se pudo volcar api_request_log (%d filas): %s", len(batch), e)
+
+
+async def _request_log_flusher() -> None:
+    while True:
+        await asyncio.sleep(_LOG_FLUSH_SECS)
+        await _flush_request_log()
 
 
 @asynccontextmanager
@@ -179,6 +205,7 @@ async def lifespan(app: FastAPI):
     except Exception as _e:
         logger.warning("⚠️ Year DB init failed (non-fatal): %s", _e)
 
+    app.state.log_flusher = asyncio.create_task(_request_log_flusher())
     scheduler.start()
     logger.info(f"⏰ [Startup] Scheduler iniciado (intervalo: {settings.refresh_interval_minutes} min)")
 
@@ -194,6 +221,8 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown(wait=False)
     logger.info("✅ [Shutdown] Scheduler detenido")
 
+    app.state.log_flusher.cancel()
+    await _flush_request_log()
     await app.state.engine.dispose()
     logger.info("✅ [Shutdown] Base de datos desconectada")
 
@@ -232,11 +261,15 @@ async def track_requests(request: Request, call_next):
     duration_ms = int((time.time() - start) * 1000)
 
     path = request.url.path
-    if path not in _TRACKING_EXCLUDED_PATHS and not path.startswith(_TRACKING_EXCLUDED_PREFIXES):
+    # request.scope["route"] solo existe si algun router hizo match: asi no se guardan
+    # los escaneres (/.env, /phpinfo, /login...) que responden 404 sin ruta
+    if (
+        request.scope.get("route") is not None
+        and path not in _TRACKING_EXCLUDED_PATHS
+        and not path.startswith(_TRACKING_EXCLUDED_PREFIXES)
+    ):
         client_id = request.headers.get("X-Client-Id") or _guess_client(request.headers.get("user-agent", ""))
-        asyncio.create_task(
-            _log_request(request.method, path, response.status_code, duration_ms, client_id)
-        )
+        _enqueue_request(request.method, path, response.status_code, duration_ms, client_id)
 
     return response
 
