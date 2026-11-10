@@ -143,7 +143,7 @@ async def lifespan(app: FastAPI):
     # Inicializar job de Cubanomic
     await init_cubanomic_scheduler(scheduler, database.async_session_factory)
 
-    # Captura diaria de imagen ElToque (7:05 Cuba) — no-fatal si falla,
+    # Captura diaria de imagen ElToque (8:30 Cuba) — no-fatal si falla,
     # el endpoint on-demand de /toqueimg sigue funcionando igual
     try:
         await init_image_capture_scheduler(scheduler, database.async_session_factory)
