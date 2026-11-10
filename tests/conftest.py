@@ -1,9 +1,16 @@
 """Fixtures compartidos para tests."""
 
+import os
+
 import pytest
 from httpx import Request, Response
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+
+# TestClient ejecuta el lifespan real: con un .env local, notify() le escribiria
+# al grupo de soporte de verdad. Vacios, notify() sale por su guard.
+os.environ["LOG_BOT_TOKEN"] = ""
+os.environ["LOG_CHAT_ID"] = ""
 
 from src.database import Base
 from src.main import app
