@@ -1,8 +1,11 @@
 """Binance API client for fetching cryptocurrency prices."""
 
 import json
+import logging
 import httpx
 from typing import Optional, Dict, Any, List
+
+logger = logging.getLogger(__name__)
 
 
 # Binance US API (funciona desde regiones restringidas)
@@ -58,25 +61,25 @@ async def fetch_binance(
 
             # Log how many symbols we got for debugging
             if len(result) < len(symbols):
-                print(f"⚠️ Binance: Solo {len(result)}/{len(symbols)} símbolos obtenidos")
+                logger.warning(f"⚠️ Binance: Solo {len(result)}/{len(symbols)} símbolos obtenidos")
                 missing = set(symbols) - set(result.keys())
                 if missing:
-                    print(f"   Símbolos faltantes: {sorted(missing)[:10]}")  # Show first 10
+                    logger.debug(f"   Símbolos faltantes: {sorted(missing)[:10]}")  # Show first 10
 
             return result
 
     except httpx.HTTPStatusError as e:
-        print(f"❌ Binance HTTP error: {e.response.status_code}")
+        logger.error(f"❌ Binance HTTP error: {e.response.status_code}")
         return None
     except httpx.ReadTimeout:
-        print(f"⚠️ Binance timeout ({timeout}s)")
+        logger.warning(f"⚠️ Binance timeout ({timeout}s)")
         return None
     except httpx.RequestError as e:
-        print(f"❌ Binance request error: {e}")
+        logger.error(f"❌ Binance request error: {e}")
         return None
     except (KeyError, ValueError, json.JSONDecodeError) as e:
-        print(f"❌ Binance parse error: {e}")
+        logger.error(f"❌ Binance parse error: {e}")
         return None
     except Exception as e:
-        print(f"❌ Binance unexpected error: {e}")
+        logger.error(f"❌ Binance unexpected error: {e}")
         return None
