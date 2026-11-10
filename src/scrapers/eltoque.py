@@ -1,10 +1,13 @@
 """ElToque API client for fetching exchange rates."""
 
 import json
+import logging
 import httpx
 from typing import Optional, Dict, Any
 
 from src.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 async def fetch_eltoque(
@@ -33,7 +36,7 @@ async def fetch_eltoque(
             api_url = settings.eltoque_api_url
 
     if not api_key:
-        print("❌ Error: ELTOQUE_API_KEY no está configurada")
+        logger.error("❌ Error: ELTOQUE_API_KEY no está configurada")
         return None
 
     headers = {
@@ -57,5 +60,5 @@ async def fetch_eltoque(
     except (KeyError, json.JSONDecodeError):
         return None
     except Exception as e:
-        print(f"❌ ElToque unexpected error: {e}")
+        logger.error(f"❌ ElToque unexpected error: {e}")
         return None
