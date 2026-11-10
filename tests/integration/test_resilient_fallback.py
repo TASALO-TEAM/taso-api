@@ -59,10 +59,6 @@ async def test_fallback_strategy():
             RateSnapshot(source='eltoque', currency='EUR', buy_rate=None, sell_rate=415.20, fetched_at=old_timestamp),
             RateSnapshot(source='eltoque', currency='MLC', buy_rate=None, sell_rate=390.00, fetched_at=old_timestamp),
             
-            # CADECA - datos viejos
-            RateSnapshot(source='cadeca', currency='USD', buy_rate=122.00, sell_rate=128.00, fetched_at=old_timestamp),
-            RateSnapshot(source='cadeca', currency='EUR', buy_rate=132.50, sell_rate=138.50, fetched_at=old_timestamp),
-            
             # BCC - datos viejos
             RateSnapshot(source='bcc', currency='USD', buy_rate=None, sell_rate=122.00, fetched_at=old_timestamp),
             RateSnapshot(source='bcc', currency='EUR', buy_rate=None, sell_rate=132.50, fetched_at=old_timestamp),
@@ -90,7 +86,7 @@ async def test_fallback_strategy():
         total_rates = sum(len(rates[source]) for source in rates)
         print(f"Total de tasas obtenidas: {total_rates}")
         
-        for source in ['eltoque', 'cadeca', 'bcc', 'binance']:
+        for source in ['eltoque', 'bcc', 'binance']:
             source_rates = rates.get(source, {})
             print(f"\n{source.upper()}:")
             
@@ -99,14 +95,9 @@ async def test_fallback_strategy():
             else:
                 print(f"  ✅ {len(source_rates)} monedas:")
                 for currency, data in source_rates.items():
-                    if source == 'cadeca':
-                        buy = data.get('buy', 'N/A')
-                        sell = data.get('sell', 'N/A')
-                        print(f"    {currency}: Buy={buy}, Sell={sell}")
-                    else:
-                        rate = data.get('rate', 'N/A')
-                        age = data.get('data_age_minutes', 'N/A')
-                        print(f"    {currency}: {rate} (edad: {age}min)")
+                    rate = data.get('rate', 'N/A')
+                    age = data.get('data_age_minutes', 'N/A')
+                    print(f"    {currency}: {rate} (edad: {age}min)")
         
         # 6. Verificaciones
         print("\n" + "="*60)
@@ -123,14 +114,6 @@ async def test_fallback_strategy():
             checks_passed += 1
         else:
             print("❌ Check 1: ElToque SIN datos (fallback falló)")
-        
-        # Check 2: CADECA tiene datos
-        total_checks += 1
-        if rates.get('cadeca'):
-            print("✅ Check 2: CADECA tiene datos (fallback funcionó)")
-            checks_passed += 1
-        else:
-            print("❌ Check 2: CADECA SIN datos (fallback falló)")
         
         # Check 3: BCC tiene datos
         total_checks += 1

@@ -53,14 +53,6 @@ async def sample_data(db_session):
             sell_rate=360.00,
             fetched_at=datetime(2026, 3, 20, 14, 30, tzinfo=timezone.utc)  # Anterior
         ),
-        # CADECA
-        RateSnapshot(
-            source='cadeca',
-            currency='USD',
-            buy_rate=120.00,
-            sell_rate=125.00,
-            fetched_at=now
-        ),
         # BCC
         RateSnapshot(
             source='bcc',
@@ -104,7 +96,7 @@ def test_get_latest_rates_structure(client, sample_data):
     
     # Verificar que todas las fuentes están presentes
     assert "eltoque" in data["data"]
-    assert "cadeca" in data["data"]
+    assert data["data"]["cadeca"] == {}  # obsoleta; solo para clientes antiguos
     assert "bcc" in data["data"]
     assert "binance" in data["data"]
 
@@ -138,22 +130,6 @@ def test_get_eltoque_rates(client, sample_data):
     assert "USD" in rates
     assert rates["USD"]["rate"] == 365.00
     assert rates["USD"]["change"] in ["up", "down", "neutral"]
-
-
-def test_get_cadeca_rates(client, sample_data):
-    """GET /api/v1/tasas/cadeca retorna solo tasas de CADECA."""
-    response = client.get("/api/v1/tasas/cadeca")
-    
-    assert response.status_code == 200
-    data = response.json()
-    
-    assert data["source"] == "cadeca"
-    assert "rates" in data
-    
-    rates = data["rates"]
-    assert "USD" in rates
-    # CADECA tiene buy/sell, el rate principal es sell
-    assert rates["USD"]["rate"] == 125.00
 
 
 def test_get_bcc_rates(client, sample_data):

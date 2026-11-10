@@ -13,9 +13,9 @@ class RateSnapshot(Base):
     __tablename__ = "rate_snapshots"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    source = Column(String(20), nullable=False, index=True)  # 'eltoque', 'cadeca', 'bcc', 'binance'
+    source = Column(String(20), nullable=False, index=True)  # 'eltoque', 'bcc', 'binance', 'qvapay'
     currency = Column(String(20), nullable=False, index=True)  # 'USD', 'EUR', 'MLC', etc.
-    buy_rate = Column(Numeric(12, 4), nullable=True)  # Tasa de compra (CADECA)
+    buy_rate = Column(Numeric(12, 4), nullable=True)  # Tasa de compra (QvaPay)
     sell_rate = Column(Numeric(12, 4), nullable=True)  # Tasa de venta / única
     # Índice añadido en migración 4h — necesario para la poda de retención
     # (6 meses) y las consultas de histórico (get_history, get_latest_rates)

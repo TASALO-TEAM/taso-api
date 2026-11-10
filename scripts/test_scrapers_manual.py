@@ -20,7 +20,7 @@ load_dotenv()
 
 async def test_all_scrapers():
     """Probar todos los scrapers en vivo."""
-    from src.scrapers import fetch_eltoque, fetch_binance, fetch_cadeca, fetch_bcc
+    from src.scrapers import fetch_eltoque, fetch_binance, fetch_bcc
     
     print("=" * 60)
     print("TEST MANUAL DE SCRAPERS - TASALO API")
@@ -57,18 +57,8 @@ async def test_all_scrapers():
     else:
         print("   ❌ Error - No se obtuvieron datos")
     
-    # 3. CADECA
-    print("\n3. Probando CADECA scraper...")
-    result = await fetch_cadeca()
-    if result:
-        print(f"   ✅ Éxito - {len(result)} monedas obtenidas")
-        if 'USD' in result:
-            print(f"   💵 USD: Compra {result['USD']['compra']:.2f} / Venta {result['USD']['venta']:.2f}")
-    else:
-        print("   ❌ Error - No se obtuvieron datos (sitio puede estar caído)")
-    
-    # 4. BCC
-    print("\n4. Probando BCC scraper...")
+    # 3. BCC
+    print("\n3. Probando BCC scraper...")
     result = await fetch_bcc()
     if result:
         print(f"   ✅ Éxito - {len(result)} monedas obtenidas")

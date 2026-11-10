@@ -86,7 +86,6 @@ async def get_latest_rates(
 
     # Formatear datos para los schemas
     eltoque_rates = {}
-    cadeca_rates = {}
     bcc_rates = {}
     binance_rates = {}
     qvapay_rates = {}
@@ -99,21 +98,16 @@ async def get_latest_rates(
             sources_updated_at[source] = fetched_at
         formatted_rates = {}
         for currency, rate_info in rates.items():
-            if source in ('cadeca', 'qvapay'):
-                # CADECA: rate = venta. QvaPay: rate = promedio (compra + venta) / 2,
-                # ya calculado por el servicio. Ambas exponen buy/sell explícitos; QvaPay suma name/kind/count.
-                rate_cls = QvaPayRate if source == 'qvapay' else CurrencyRate
-                extra = qvapay_meta(currency) if source == 'qvapay' else {}
-                formatted_rates[currency] = rate_cls(
-                    rate=(
-                        rate_info.get('rate', 0) if source == 'qvapay'
-                        else rate_info.get('sell', 0)
-                    ) or 0,
+            if source == 'qvapay':
+                # QvaPay: rate = promedio (compra + venta) / 2, ya calculado por el servicio.
+                # Expone buy/sell explícitos y name/kind/count.
+                formatted_rates[currency] = QvaPayRate(
+                    rate=rate_info.get('rate', 0) or 0,
                     buy=rate_info.get('buy'),
                     sell=rate_info.get('sell'),
                     change=rate_info.get('change', 'neutral'),
                     prev_rate=rate_info.get('prev_rate'),
-                    **extra,
+                    **qvapay_meta(currency),
                 )
             else:
                 # Otras fuentes usan rate único
@@ -125,8 +119,6 @@ async def get_latest_rates(
 
         if source == 'eltoque':
             eltoque_rates = formatted_rates
-        elif source == 'cadeca':
-            cadeca_rates = formatted_rates
         elif source == 'bcc':
             bcc_rates = formatted_rates
         elif source == 'binance':
@@ -138,7 +130,6 @@ async def get_latest_rates(
         ok=True,
         data=LatestRatesData(
             eltoque=eltoque_rates,
-            cadeca=cadeca_rates,
             bcc=bcc_rates,
             binance=binance_rates,
             qvapay=qvapay_rates,
@@ -179,45 +170,6 @@ async def get_eltoque_rates(
 
     return SourceRatesResponse(
         source='eltoque',
-        rates=formatted_rates,
-        updated_at=updated_at or datetime.now(timezone.utc)
-    )
-
-
-@router.get("/cadeca", response_model=SourceRatesResponse)
-async def get_cadeca_rates(
-    db: AsyncSession = Depends(get_db),
-    max_age_minutes: int = Query(
-        default=120,
-        ge=5,
-        le=1440,
-        description="Máxima edad de datos en minutos (fallback a histórico)"
-    )
-) -> SourceRatesResponse:
-    """
-    Obtiene las últimas tasas de CADECA (oficial, compra/venta).
-    
-    ESTRATEGIA RESILIENTE:
-    - Si no hay datos frescos, usa últimos datos históricos
-    - El bot SIEMPRE recibe datos válidos (nunca None)
-
-    Incluye indicadores de cambio (up/down/neutral) comparados con el snapshot anterior.
-    """
-    rates, updated_at = await rates_service.get_source_rates(db, 'cadeca', max_age_minutes)
-
-    formatted_rates = {}
-    for currency, rate_info in rates.items():
-        # Para CADECA, incluir buy y sell explícitamente
-        formatted_rates[currency] = CurrencyRate(
-            rate=rate_info.get('sell', 0) or 0,  # rate principal es sell
-            buy=rate_info.get('buy'),  # Agregar buy explícitamente
-            sell=rate_info.get('sell'),  # Agregar sell explícitamente
-            change=rate_info.get('change', 'neutral'),
-            prev_rate=rate_info.get('prev_rate')
-        )
-
-    return SourceRatesResponse(
-        source='cadeca',
         rates=formatted_rates,
         updated_at=updated_at or datetime.now(timezone.utc)
     )
@@ -339,7 +291,7 @@ async def get_fuel_rates(
 async def get_history(
     source: str = Query(
         default="eltoque",
-        description="Fuente de datos (eltoque, cadeca, bcc, binance, qvapay)"
+        description="Fuente de datos (eltoque, bcc, binance, qvapay)"
     ),
     currency: str = Query(
         default="USD",
@@ -356,7 +308,7 @@ async def get_history(
     """
     Obtiene histórico de tasas para una fuente y moneda específicas.
 
-    - **source**: Fuente de datos (eltoque, cadeca, bcc, binance, qvapay)
+    - **source**: Fuente de datos (eltoque, bcc, binance, qvapay)
     - **currency**: Moneda a consultar (USD, EUR, etc.)
     - **days**: Días de histórico (1-365, default: 7)
     """
@@ -382,7 +334,7 @@ async def get_history(
 
 @router.get("/history/daily", response_model=DailyHistoryResponse)
 async def get_daily_history(
-    source: Literal["eltoque", "cadeca", "bcc", "binance", "qvapay"] = Query(
+    source: Literal["eltoque", "bcc", "binance", "qvapay"] = Query(
         default="eltoque", description="Fuente de datos"
     ),
     currency: str = Query(default="USD", description="Moneda a consultar"),
@@ -663,22 +615,16 @@ def _group_local_history_by_date(snapshots: list) -> list[LocalHistorySnapshot]:
         # Collect all available rates for this date
         if snapshot.eltoque_usd is not None:
             by_date[snapshot_date]['usd'].append(snapshot.eltoque_usd)
-        if snapshot.cadeca_usd is not None:
-            by_date[snapshot_date]['usd'].append(snapshot.cadeca_usd)
         if snapshot.bcc_usd is not None:
             by_date[snapshot_date]['usd'].append(snapshot.bcc_usd)
 
         if snapshot.eltoque_eur is not None:
             by_date[snapshot_date]['eur'].append(snapshot.eltoque_eur)
-        if snapshot.cadeca_eur is not None:
-            by_date[snapshot_date]['eur'].append(snapshot.cadeca_eur)
         if snapshot.bcc_eur is not None:
             by_date[snapshot_date]['eur'].append(snapshot.bcc_eur)
 
         if snapshot.eltoque_mlc is not None:
             by_date[snapshot_date]['mlc'].append(snapshot.eltoque_mlc)
-        if snapshot.cadeca_mlc is not None:
-            by_date[snapshot_date]['mlc'].append(snapshot.cadeca_mlc)
         if snapshot.bcc_mlc is not None:
             by_date[snapshot_date]['mlc'].append(snapshot.bcc_mlc)
 

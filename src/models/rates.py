@@ -41,11 +41,6 @@ class HistorySnapshot(Base):
     eltoque_eur = Column(Float)
     eltoque_mlc = Column(Float)
 
-    # CADECA rates (average of buy/sell)
-    cadeca_usd = Column(Float)
-    cadeca_eur = Column(Float)
-    cadeca_mlc = Column(Float)
-
     # BCC rates (average of buy/sell)
     bcc_usd = Column(Float)
     bcc_eur = Column(Float)
@@ -56,4 +51,4 @@ class HistorySnapshot(Base):
     binance_eth = Column(Float)
 
     def __repr__(self) -> str:
-        return f"<HistorySnapshot(fetched_at={self.fetched_at}, eltoque_usd={self.eltoque_usd}, cadeca_usd={self.cadeca_usd}, bcc_usd={self.bcc_usd})>"
+        return f"<HistorySnapshot(fetched_at={self.fetched_at}, eltoque_usd={self.eltoque_usd}, bcc_usd={self.bcc_usd})>"

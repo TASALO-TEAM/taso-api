@@ -69,7 +69,7 @@ class TestUserStatsResponse:
         _track(client, valid_auth_headers, uid, "/status_u1", source="eltoque")
         _track(client, valid_auth_headers, uid, "/status_u1", source="eltoque")
         _track(client, valid_auth_headers, uid, "/status_u2", source="bcc", success=False)
-        _track(client, valid_auth_headers, other, "/status_u1", source="cadeca", username="otro")
+        _track(client, valid_auth_headers, other, "/status_u1", source="qvapay", username="otro")
 
         response = client.get(
             f"/api/v1/admin/stats/users/{uid}?window=30d", headers=valid_auth_headers
@@ -86,7 +86,7 @@ class TestUserStatsResponse:
         assert data["by_command"][0] == {"name": "/status_u1", "count": 2}
         assert {"name": "/status_u2", "count": 1} in data["by_command"]
         sources = {item["name"]: item["count"] for item in data["by_source"]}
-        assert sources == {"eltoque": 2, "bcc": 1}  # nada de «cadeca» (es de otro usuario)
+        assert sources == {"eltoque": 2, "bcc": 1}  # nada de «qvapay» (es de otro usuario)
         assert data["first_seen"] is not None
         assert data["last_seen"] is not None
         assert data["total_commands_all_time"] >= 3

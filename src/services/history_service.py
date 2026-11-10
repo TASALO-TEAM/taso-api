@@ -30,7 +30,7 @@ CUBA_TZ = ZoneInfo("America/Havana")
 DAILY_HOUR = 7
 
 # Fuentes que se incluyen en el resumen para las tarjetas de la app.
-SUMMARY_SOURCES = ("eltoque", "cadeca", "bcc", "qvapay")
+SUMMARY_SOURCES = ("eltoque", "bcc", "qvapay")
 
 # Una consulta de resumen recorre ~100 000 filas; se cachea poco tiempo en memoria del proceso.
 CACHE_TTL_SECONDS = 300

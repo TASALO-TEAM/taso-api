@@ -31,7 +31,7 @@ class BotCommandStat(Base):
     command = Column(String(50), nullable=False, index=True)
     user_id = Column(BigInteger, nullable=False, index=True)
     username = Column(String(100), nullable=True)
-    source = Column(String(50), nullable=True)  # Fuente consultada si aplica (eltoque, bcc, cadeca)
+    source = Column(String(50), nullable=True)  # Fuente consultada si aplica (eltoque, bcc)
     success = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
 

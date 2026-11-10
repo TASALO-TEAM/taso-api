@@ -60,7 +60,6 @@ class TestSnapshotRate:
 
     def test_otras_fuentes_usan_la_venta(self):
         assert snapshot_rate("eltoque", None, 517.26) == 517.26
-        assert snapshot_rate("cadeca", 515, 525) == 525.0
         assert snapshot_rate("bcc", 514, None) == 514.0
 
     def test_valores_vacios_o_cero_se_descartan(self):
@@ -108,7 +107,6 @@ async def test_get_summary_agrupa_por_fuente_y_moneda(db_session):
         [
             _snap("eltoque", "USD", None, 510, utc(2026, 10, 8, 11, 0)),
             _snap("eltoque", "CUP", None, 1, utc(2026, 10, 8, 11, 0)),  # CUP no cuenta fuera de QvaPay
-            _snap("cadeca", "USD", 515, 525, utc(2026, 10, 8, 11, 0)),
             _snap("qvapay", "CUP", 530, 540, utc(2026, 10, 8, 11, 0)),
             _snap("binance", "BTC", None, 95000, utc(2026, 10, 8, 11, 0)),  # no está en el resumen
         ]
@@ -119,7 +117,6 @@ async def test_get_summary_agrupa_por_fuente_y_moneda(db_session):
 
     assert data == {
         "eltoque": {"USD": [(date(2026, 10, 8), 510.0)]},
-        "cadeca": {"USD": [(date(2026, 10, 8), 525.0)]},
         "qvapay": {"CUP": [(date(2026, 10, 8), 535.0)]},
     }
 

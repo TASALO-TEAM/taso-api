@@ -12,7 +12,7 @@ class ImageSnapshot(Base):
     __tablename__ = "image_snapshots"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    source = Column(String(50), nullable=False, index=True)  # "eltoque", "cadeca", etc.
+    source = Column(String(50), nullable=False, index=True)  # "eltoque", "bcc", etc.
     image_path = Column(String(500), nullable=False)  # Path en filesystem
     thumbnail_path = Column(String(500), nullable=True)  # Thumbnail opcional
     file_size = Column(Integer, nullable=True)  # Tamaño en bytes

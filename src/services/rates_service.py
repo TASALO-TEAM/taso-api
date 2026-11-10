@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.scrapers.eltoque import fetch_eltoque
 from src.scrapers.binance import fetch_binance
-from src.scrapers.cadeca import fetch_cadeca
 from src.scrapers.bcc import fetch_bcc
 from src.scrapers.qvapay import fetch_qvapay
 from src.scrapers.cubanomic import fetch_cubanomic
@@ -74,23 +73,21 @@ async def _fetch_safe(coro_func, timeout_secs: int, source_name: str) -> Any:
 
 async def fetch_all_sources() -> dict[str, Any]:
     """
-    Ejecuta los 5 scrapers en paralelo con timeouts individuales.
+    Ejecuta los 4 scrapers en paralelo con timeouts individuales.
 
     Timeouts:
     - ElToque: 12s (API externa con auth)
     - Binance: 10s (API pública rápida)
-    - CADECA: 8s (web scraper inestable)
     - BCC: 10s (web scraper oficial)
     - QvaPay: 12s (10 consultas P2P en paralelo)
 
     Returns:
-        dict con claves 'eltoque', 'binance', 'cadeca', 'bcc', 'qvapay'
+        dict con claves 'eltoque', 'binance', 'bcc', 'qvapay'
         Cada valor es el resultado del scraper o None si falló
     """
     results = await asyncio.gather(
         _fetch_safe(fetch_eltoque, 12, "ElToque"),
         _fetch_safe(fetch_binance, 10, "Binance"),
-        _fetch_safe(fetch_cadeca, 8, "CADECA"),
         _fetch_safe(fetch_bcc, 10, "BCC"),
         _fetch_safe(fetch_qvapay, 12, "QvaPay"),
         return_exceptions=False,
@@ -99,9 +96,8 @@ async def fetch_all_sources() -> dict[str, Any]:
     return {
         "eltoque": results[0],
         "binance": results[1],
-        "cadeca": results[2],
-        "bcc": results[3],
-        "qvapay": results[4],
+        "bcc": results[2],
+        "qvapay": results[3],
     }
 
 
@@ -127,32 +123,12 @@ def _normalize_eltoque_data(data: dict) -> list[dict]:
     return result
 
 
-def _normalize_cadeca_bcc_data(data: dict, source: str) -> list[dict]:
-    """
-    Normaliza datos de CADECA/BCC a lista de {currency, buy_rate, sell_rate}.
-
-    CADECA: {'USD': {'compra': 120, 'venta': 125}}
-    BCC: {'USD': 125.0}  # Solo venta
-    """
-    result = []
-
-    for currency, value in data.items():
-        if isinstance(value, dict):
-            # CADECA format
-            result.append(
-                {
-                    "currency": currency,
-                    "buy_rate": float(value.get("compra", 0)),
-                    "sell_rate": float(value.get("venta", 0)),
-                }
-            )
-        else:
-            # BCC format (single rate)
-            result.append(
-                {"currency": currency, "buy_rate": None, "sell_rate": float(value)}
-            )
-
-    return result
+def _normalize_bcc_data(data: dict) -> list[dict]:
+    """Normaliza datos de BCC ({'USD': 125.0}, solo venta) a lista de {currency, buy_rate, sell_rate}."""
+    return [
+        {"currency": currency, "buy_rate": None, "sell_rate": float(value)}
+        for currency, value in data.items()
+    ]
 
 
 def _normalize_qvapay_data(data: dict) -> list[dict]:
@@ -217,7 +193,7 @@ async def save_snapshot(session: AsyncSession, source: str, data: Any) -> None:
 
     Args:
         session: SQLAlchemy async session
-        source: 'eltoque' | 'binance' | 'cadeca' | 'bcc' | 'qvapay'
+        source: 'eltoque' | 'binance' | 'bcc' | 'qvapay'
         data: Datos crudos del scraper
 
     Legacy pattern: save_*_history() de legacy/tasa_manager.py
@@ -229,10 +205,8 @@ async def save_snapshot(session: AsyncSession, source: str, data: Any) -> None:
     # Normalizar datos según fuente
     if source == "eltoque":
         normalized = _normalize_eltoque_data(data)
-    elif source == "cadeca":
-        normalized = _normalize_cadeca_bcc_data(data, source)
     elif source == "bcc":
-        normalized = _normalize_cadeca_bcc_data(data, source)
+        normalized = _normalize_bcc_data(data)
     elif source == "binance":
         normalized = _normalize_binance_data(data)
     elif source == "qvapay":
@@ -360,7 +334,6 @@ async def get_latest_rates(
         {
             'eltoque': {'USD': {'rate': 365.0, 'change': 'up'}},
             'binance': {'BTC': {'rate': 45000.0}},
-            'cadeca': {'USD': {'buy': 120.0, 'sell': 125.0}},
             'bcc': {'USD': {'rate': 125.0}},
             'qvapay': {'CUP': {'rate': 981.5, 'buy': 978.3, 'sell': 984.8}}
         }
@@ -370,7 +343,7 @@ async def get_latest_rates(
     result = {}
     now = datetime.now(timezone.utc)
 
-    for source in ["eltoque", "binance", "cadeca", "bcc", "qvapay"]:
+    for source in ["eltoque", "binance", "bcc", "qvapay"]:
         snapshots = []
         age_minutes = None
 
@@ -474,38 +447,6 @@ async def get_latest_rates(
             if not formatted:
                 print(f"⚠️ {source}: No se pudo formatear ningún dato válido")
 
-        elif source == "cadeca":
-            formatted = {}
-            for snap in snapshots:
-                # CADECA necesita al menos buy_rate o sell_rate
-                if snap.buy_rate is None and snap.sell_rate is None:
-                    print(
-                        f"⚠️ {source}/{snap.currency}: buy_rate y sell_rate son None, saltando"
-                    )
-                    continue
-
-                # Obtener tasa anterior para calcular cambio (usar sell_rate)
-                prev_rate = None
-                if snap.sell_rate:
-                    prev_rate = await _get_previous_snapshot(
-                        session, source, snap.currency, snap.fetched_at
-                    )
-
-                formatted[snap.currency] = {
-                    "buy": float(snap.buy_rate) if snap.buy_rate else None,
-                    "sell": float(snap.sell_rate) if snap.sell_rate else None,
-                    "change": calculate_change(
-                        float(snap.sell_rate) if snap.sell_rate else 0, prev_rate
-                    ),
-                    "prev_rate": prev_rate,
-                    "fetched_at": snap.fetched_at.isoformat(),
-                    "data_age_minutes": age_minutes,
-                }
-
-            result[source] = formatted
-            if not formatted:
-                print(f"⚠️ {source}: No se pudo formatear ningún dato válido")
-
         elif source == "qvapay":
             formatted = {}
             for snap in snapshots:
@@ -560,7 +501,7 @@ async def _get_source_rates(
 
     Args:
         session: SQLAlchemy async session
-        source: 'eltoque' | 'cadeca' | 'bcc' | 'binance' | 'qvapay'
+        source: 'eltoque' | 'bcc' | 'binance' | 'qvapay'
         max_age_minutes: Máxima edad de datos antes de marcar como stale
 
     Returns:
@@ -641,28 +582,6 @@ async def _get_source_rates(
             formatted[snap.currency] = {
                 "rate": rate,
                 "change": calculate_change(rate, prev_rate),
-                "prev_rate": prev_rate,
-            }
-
-        elif source == "cadeca":
-            # CADECA necesita al menos buy_rate o sell_rate
-            if snap.buy_rate is None and snap.sell_rate is None:
-                print(
-                    f"⚠️ {source}/{snap.currency}: buy_rate y sell_rate son None, saltando"
-                )
-                continue
-
-            prev_rate = None
-            if snap.sell_rate:
-                prev_rate = await _get_previous_snapshot(
-                    session, source, snap.currency, snap.fetched_at
-                )
-            formatted[snap.currency] = {
-                "buy": float(snap.buy_rate) if snap.buy_rate else None,
-                "sell": float(snap.sell_rate) if snap.sell_rate else None,
-                "change": calculate_change(
-                    float(snap.sell_rate) if snap.sell_rate else 0, prev_rate
-                ),
                 "prev_rate": prev_rate,
             }
 
@@ -945,25 +864,20 @@ async def save_history_snapshot(db: AsyncSession, rates_data: dict) -> None:
         eltoque_eur = eltoque_data.get('EUR', {}).get('rate')
         eltoque_mlc = eltoque_data.get('MLC', {}).get('rate')
 
-    # --- CADECA ---
-    cadeca_data = rates_data.get('cadeca') or {}
     # For each currency, value can be dict with 'compra'/'venta' (raw) or 'buy'/'sell' (normalized)
-    def _extract_cadeca_rate(currency_data):
+    def _extract_rate(currency_data):
         if not currency_data:
             return None
-        # If it's a dict, try _average_cadeca_rate; if it's numeric, return directly
+        # If it's a dict, try _average_buy_sell_rate; if it's numeric, return directly
         if isinstance(currency_data, (int, float)):
             return float(currency_data)
-        return _average_cadeca_rate(currency_data)
-    cadeca_usd = _extract_cadeca_rate(cadeca_data.get('USD'))
-    cadeca_eur = _extract_cadeca_rate(cadeca_data.get('EUR'))
-    cadeca_mlc = _extract_cadeca_rate(cadeca_data.get('MLC'))
+        return _average_buy_sell_rate(currency_data)
 
     # --- BCC ---
     bcc_data = rates_data.get('bcc') or {}
-    bcc_usd = _extract_cadeca_rate(bcc_data.get('USD'))
-    bcc_eur = _extract_cadeca_rate(bcc_data.get('EUR'))
-    bcc_mlc = _extract_cadeca_rate(bcc_data.get('MLC'))
+    bcc_usd = _extract_rate(bcc_data.get('USD'))
+    bcc_eur = _extract_rate(bcc_data.get('EUR'))
+    bcc_mlc = _extract_rate(bcc_data.get('MLC'))
 
     # --- Binance ---
     binance_data = rates_data.get('binance') or {}
@@ -983,9 +897,6 @@ async def save_history_snapshot(db: AsyncSession, rates_data: dict) -> None:
         eltoque_usd=eltoque_usd,
         eltoque_eur=eltoque_eur,
         eltoque_mlc=eltoque_mlc,
-        cadeca_usd=cadeca_usd,
-        cadeca_eur=cadeca_eur,
-        cadeca_mlc=cadeca_mlc,
         bcc_usd=bcc_usd,
         bcc_eur=bcc_eur,
         bcc_mlc=bcc_mlc,
@@ -998,13 +909,13 @@ async def save_history_snapshot(db: AsyncSession, rates_data: dict) -> None:
     logger.info(f"📊 History snapshot saved: {snapshot.fetched_at}")
 
 
-def _average_cadeca_rate(rate_data: dict | float | None) -> float | None:
+def _average_buy_sell_rate(rate_data: dict | float | None) -> float | None:
     """
-    Calculate average of buy/sell rates for CADECA/BCC.
+    Calculate average of buy/sell rates for a source.
     Supports both Spanish keys ('compra'/'venta') and English ('buy'/'sell').
     
     Args:
-        rate_data: For CADECA: dict with buy/sell keys.
+        rate_data: Dict with buy/sell keys.
                    For BCC: float directly.
                    None if no data.
     

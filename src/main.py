@@ -203,7 +203,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="TASALO API",
-    description="API para tasas de cambio en Cuba. Agrega datos de ElToque, CADECA, BCC y Binance.",
+    description="API para tasas de cambio en Cuba. Agrega datos de ElToque, BCC, Binance y QvaPay.",
     version=API_VERSION,
     lifespan=lifespan,
 )

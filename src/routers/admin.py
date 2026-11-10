@@ -30,7 +30,7 @@ async def refresh_rates(
     """
     Dispara un refresh inmediato de todas las fuentes de tasas.
 
-    Ejecuta los 5 scrapers (ElToque, Binance, CADECA, BCC, QvaPay) en paralelo
+    Ejecuta los 4 scrapers (ElToque, Binance, BCC, QvaPay) en paralelo
     y persiste los resultados en la base de datos.
 
     Returns:

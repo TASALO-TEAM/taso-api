@@ -37,19 +37,17 @@ def test_calculate_change_none():
 
 @pytest.mark.asyncio
 async def test_fetch_all_sources_returns_all_sources():
-    """fetch_all_sources ejecuta los 5 scrapers en paralelo."""
+    """fetch_all_sources ejecuta los 4 scrapers en paralelo."""
     from src.services.rates_service import fetch_all_sources
     
     with patch('src.services.rates_service.fetch_eltoque') as mock_eltoque, \
          patch('src.services.rates_service.fetch_binance') as mock_binance, \
-         patch('src.services.rates_service.fetch_cadeca') as mock_cadeca, \
          patch('src.services.rates_service.fetch_bcc') as mock_bcc, \
          patch('src.services.rates_service.fetch_qvapay') as mock_qvapay:
         
         # Setup mocks
         mock_eltoque.return_value = {'tasas': {'USD': 365.0}}
         mock_binance.return_value = {'BTCUSDT': '45000.00'}
-        mock_cadeca.return_value = {'USD': {'compra': 120.0, 'venta': 125.0}}
         mock_bcc.return_value = {'USD': 125.0}
         mock_qvapay.return_value = {'CUP': {'buy': 978.31, 'sell': 984.78}}
         
@@ -57,7 +55,6 @@ async def test_fetch_all_sources_returns_all_sources():
         
         assert result['eltoque'] == {'tasas': {'USD': 365.0}}
         assert result['binance'] == {'BTCUSDT': '45000.00'}
-        assert result['cadeca'] == {'USD': {'compra': 120.0, 'venta': 125.0}}
         assert result['bcc'] == {'USD': 125.0}
         assert result['qvapay'] == {'CUP': {'buy': 978.31, 'sell': 984.78}}
 
@@ -69,14 +66,12 @@ async def test_fetch_all_sources_handles_individual_failures():
     
     with patch('src.services.rates_service.fetch_eltoque') as mock_eltoque, \
          patch('src.services.rates_service.fetch_binance') as mock_binance, \
-         patch('src.services.rates_service.fetch_cadeca') as mock_cadeca, \
          patch('src.services.rates_service.fetch_bcc') as mock_bcc, \
          patch('src.services.rates_service.fetch_qvapay') as mock_qvapay:
         
         # ElToque falla, los demás ok
         mock_eltoque.side_effect = Exception("API timeout")
         mock_binance.return_value = {'BTCUSDT': '45000.00'}
-        mock_cadeca.return_value = {'USD': {'compra': 120.0, 'venta': 125.0}}
         mock_bcc.return_value = {'USD': 125.0}
         mock_qvapay.return_value = {'CUP': {'buy': 978.31, 'sell': 984.78}}
         
@@ -84,7 +79,6 @@ async def test_fetch_all_sources_handles_individual_failures():
         
         assert result['eltoque'] is None  # Falló
         assert result['binance'] is not None
-        assert result['cadeca'] is not None
         assert result['bcc'] is not None
         assert result['qvapay'] is not None
 
@@ -119,32 +113,6 @@ async def test_save_snapshot_eltoque_inserts_records():
 
 
 @pytest.mark.asyncio
-async def test_save_snapshot_cadeca_inserts_buy_sell():
-    """save_snapshot persiste compra/venta para CADECA."""
-    from src.services.rates_service import save_snapshot
-    from src.database import async_session_factory
-    from src.models.rate_snapshot import RateSnapshot
-
-    cadeca_data = {
-        'USD': {'compra': 120.00, 'venta': 125.00},
-        'EUR': {'compra': 130.00, 'venta': 135.00}
-    }
-
-    async with async_session_factory() as session:
-        await save_snapshot(session, 'cadeca', cadeca_data)
-        await session.commit()
-
-        from sqlalchemy import select
-        stmt = select(RateSnapshot).where(RateSnapshot.source == 'cadeca')
-        result = await session.execute(stmt)
-        snapshots = result.scalars().all()
-
-        usd_snapshot = next((s for s in snapshots if s.currency == 'USD'), None)
-        assert usd_snapshot.buy_rate == 120.00
-        assert usd_snapshot.sell_rate == 125.00
-
-
-@pytest.mark.asyncio
 async def test_get_latest_rates_returns_all_sources():
     """get_latest_rates retorna el snapshot más reciente de cada fuente."""
     from src.services.rates_service import get_latest_rates
@@ -155,7 +123,6 @@ async def test_get_latest_rates_returns_all_sources():
         
         assert 'eltoque' in result
         assert 'binance' in result
-        assert 'cadeca' in result
         assert 'bcc' in result
 
 

@@ -133,19 +133,6 @@ async def seed_rate_snapshots(db: AsyncSession, quiet: bool = False) -> list[Rat
     if not quiet:
         print(f"✓ RateSnapshot: eltoque USD sell={snap.sell_rate}")
 
-    # CADECA USD (buy & sell)
-    snap = RateSnapshot(
-        source="cadeca",
-        currency="USD",
-        buy_rate=Decimal("362.00"),
-        sell_rate=Decimal("368.00"),
-        fetched_at=now
-    )
-    db.add(snap)
-    snapshots.append(snap)
-    if not quiet:
-        print(f"✓ RateSnapshot: cadeca USD buy={snap.buy_rate} sell={snap.sell_rate}")
-
     # BCC EUR
     snap = RateSnapshot(
         source="bcc",
@@ -196,9 +183,6 @@ async def seed_history_snapshot(db: AsyncSession, quiet: bool = False) -> Histor
         eltoque_usd=365.50,
         eltoque_eur=355.00,
         eltoque_mlc=245.00,
-        cadeca_usd=362.00,
-        cadeca_eur=335.00,
-        cadeca_mlc=240.00,
         bcc_usd=363.00,
         bcc_eur=336.00,
         bcc_mlc=241.00,
