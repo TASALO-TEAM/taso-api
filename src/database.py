@@ -95,6 +95,11 @@ def get_engine(database_url: str, echo: bool = False):
             url.render_as_string(hide_password=False),
             echo=echo,
             pool_pre_ping=True,
+            # 1 worker, ~2 req/min: un pool chico basta y ahorra conexiones a Supabase
+            pool_size=3,
+            max_overflow=2,
+            pool_timeout=10,
+            pool_recycle=1800,
             connect_args=connect_args,
         )
 
