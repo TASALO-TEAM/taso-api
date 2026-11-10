@@ -13,7 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import get_settings
 from src.models.scheduler_status import SchedulerStatus
-from src.services.rates_service import fetch_all_sources, save_snapshot, save_history_snapshot
+from src.services.rates_service import (
+    fetch_all_sources, save_snapshot, save_history_snapshot, invalidate_rates_cache,
+)
 from src.services.stats_service import purge_old_api_request_logs
 
 logger = logging.getLogger(__name__)
@@ -144,11 +146,11 @@ async def init_image_capture_scheduler(
     scheduler.add_job(
         capture_eltoque_image_job,
         trigger="cron",
-        hour=7,
-        minute=5,
+        hour=8,
+        minute=30,
         timezone="America/Havana",
         id="eltoque_image_capture",
-        name="Captura diaria imagen ElToque (7:05 Cuba)",
+        name="Captura diaria imagen ElToque (8:30 Cuba)",
         replace_existing=True,
     )
     print("✅ [Scheduler] ElToque image capture job added (07:05 Cuba)")
@@ -317,6 +319,8 @@ async def refresh_all(db_factory: Callable) -> None:
             )
 
             await session.commit()
+            # Tasas nuevas guardadas: la caché de lecturas ya no es válida
+            invalidate_rates_cache()
             print(f"✅ [Scheduler] refresh_all completado exitosamente")
 
         except Exception as e:
