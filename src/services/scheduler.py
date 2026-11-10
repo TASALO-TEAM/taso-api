@@ -75,9 +75,9 @@ async def init_scheduler_status(db_factory: Callable) -> None:
                 )
                 session.add(status)
                 await session.commit()
-                print("✅ [Scheduler] Estado inicial registrado en DB")
+                logger.info("✅ [Scheduler] Estado inicial registrado en DB")
         except Exception as e:
-            print(f"⚠️ [Scheduler] No se pudo inicializar el estado: {e}")
+            logger.warning(f"⚠️ [Scheduler] No se pudo inicializar el estado: {e}")
             await session.rollback()
 
 
@@ -109,7 +109,7 @@ async def init_cubanomic_scheduler(
         name="Fetch Cubanomic rates daily",
         replace_existing=True,
     )
-    print("✅ [Scheduler] Cubanomic daily job added (00:01 UTC)")
+    logger.info("✅ [Scheduler] Cubanomic daily job added (00:01 UTC)")
 
 
 async def init_image_capture_scheduler(
@@ -153,7 +153,7 @@ async def init_image_capture_scheduler(
         name="Captura diaria imagen ElToque (8:30 Cuba)",
         replace_existing=True,
     )
-    print("✅ [Scheduler] ElToque image capture job added (08:30 Cuba)")
+    logger.info("✅ [Scheduler] ElToque image capture job added (08:30 Cuba)")
 
 
 async def init_year_scheduler(
@@ -212,7 +212,7 @@ async def init_year_scheduler(
         name="Year daily progress alert",
         replace_existing=True,
     )
-    print("✅ [Scheduler] Year daily alert job added (checks every minute)")
+    logger.info("✅ [Scheduler] Year daily alert job added (checks every minute)")
 
     async def year_new_year_job() -> None:
         """Daily at midnight UTC: check Jan 1, add greeting if missing, set extra flag."""
@@ -240,7 +240,7 @@ async def init_year_scheduler(
         name="Year new year greeting (Jan 1 auto-quote)",
         replace_existing=True,
     )
-    print("✅ [Scheduler] Year new-year greeting job added (00:00 UTC daily)")
+    logger.info("✅ [Scheduler] Year new-year greeting job added (00:00 UTC daily)")
 
 
 def init_rates_retention_scheduler(
@@ -283,12 +283,12 @@ def init_rates_retention_scheduler(
         name="Poda diaria de tasas históricas (>6 meses)",
         replace_existing=True,
     )
-    print("✅ [Scheduler] Rates retention job added (03:10 UTC)")
+    logger.info("✅ [Scheduler] Rates retention job added (03:10 UTC)")
 
 
 async def refresh_all(db_factory: Callable) -> None:
     """Job que se ejecuta periódicamente: scrapers → persistencia → history → scheduler_status."""
-    print(f"🔄 [Scheduler] Iniciando refresh_all")
+    logger.info(f"🔄 [Scheduler] Iniciando refresh_all")
 
     async with db_factory() as session:
         try:
@@ -321,10 +321,10 @@ async def refresh_all(db_factory: Callable) -> None:
             await session.commit()
             # Tasas nuevas guardadas: la caché de lecturas ya no es válida
             invalidate_rates_cache()
-            print(f"✅ [Scheduler] refresh_all completado exitosamente")
+            logger.info(f"✅ [Scheduler] refresh_all completado exitosamente")
 
         except Exception as e:
-            print(f"❌ [Scheduler] Error en refresh_all: {e}")
+            logger.error(f"❌ [Scheduler] Error en refresh_all: {e}")
             await session.rollback()
 
             async with db_factory() as error_session:
