@@ -1,9 +1,10 @@
 """Router para endpoints públicos de tasas."""
 
+import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Literal
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request, Response
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,6 +38,31 @@ from src.models.rates import HistorySnapshot as HistorySnapshotModel
 logger = logging.getLogger(__name__)
 
 
+# Las tasas solo cambian cuando el scheduler guarda un ciclo nuevo (cada 15 min): los clientes
+# pueden reutilizar la respuesta unos segundos y revalidar con ETag sin recibir el cuerpo.
+CACHE_CONTROL = "public, max-age=30"
+
+
+def _conditional(
+    request: Request, response: Response, key: str, stamps: dict[str, datetime]
+) -> Response | None:
+    """Pone ETag + Cache-Control; devuelve un 304 si el cliente ya tiene esta versión.
+
+    El ETag sale de la hora real del dato (fetched_at por fuente) y de los parámetros, no del
+    cuerpo: así no cambia entre peticiones mientras no haya tasas nuevas. Sin datos, no hay ETag.
+    """
+    if not stamps:
+        return None
+    raw = key + "|" + ",".join(f"{k}:{v.isoformat()}" for k, v in sorted(stamps.items()))
+    etag = 'W/"' + hashlib.blake2s(raw.encode(), digest_size=8).hexdigest() + '"'
+    headers = {"ETag": etag, "Cache-Control": CACHE_CONTROL}
+    sent = [v.strip() for v in request.headers.get("if-none-match", "").split(",")]
+    if etag in sent:
+        return Response(status_code=304, headers=headers)
+    response.headers.update(headers)
+    return None
+
+
 router = APIRouter()
 
 
@@ -61,6 +87,8 @@ def _latest_fetched_at(rates: dict) -> datetime | None:
 
 @router.get("/latest", response_model=LatestRatesResponse)
 async def get_latest_rates(
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     max_age_minutes: int = Query(
         default=120,
@@ -79,7 +107,9 @@ async def get_latest_rates(
     
     Incluye indicadores de cambio (up/down/neutral) comparados con el snapshot anterior.
     """
-    rates_data = await rates_service.get_latest_rates(db, max_age_minutes=max_age_minutes)
+    rates_data = await rates_service.get_latest_rates(
+        db, max_age_minutes=max_age_minutes, use_cache=True
+    )
 
     # Encontrar el updated_at más reciente entre todas las fuentes
     updated_at = datetime.now(timezone.utc)
@@ -126,6 +156,10 @@ async def get_latest_rates(
         elif source == 'qvapay':
             qvapay_rates = formatted_rates
 
+    not_modified = _conditional(request, response, f"latest|{max_age_minutes}", sources_updated_at)
+    if not_modified is not None:
+        return not_modified
+
     return LatestRatesResponse(
         ok=True,
         data=LatestRatesData(
@@ -141,6 +175,8 @@ async def get_latest_rates(
 
 @router.get("/eltoque", response_model=SourceRatesResponse)
 async def get_eltoque_rates(
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     max_age_minutes: int = Query(
         default=120,
@@ -158,7 +194,14 @@ async def get_eltoque_rates(
 
     Incluye indicadores de cambio (up/down/neutral) comparados con el snapshot anterior.
     """
-    rates, updated_at = await rates_service.get_source_rates(db, 'eltoque', max_age_minutes)
+    rates, updated_at = await rates_service.get_source_rates(
+        db, 'eltoque', max_age_minutes, use_cache=True
+    )
+    not_modified = _conditional(
+        request, response, f"eltoque|{max_age_minutes}", {"eltoque": updated_at} if updated_at else {}
+    )
+    if not_modified is not None:
+        return not_modified
 
     formatted_rates = {}
     for currency, rate_info in rates.items():

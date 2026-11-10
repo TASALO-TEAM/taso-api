@@ -1,12 +1,14 @@
 """Rates business logic service."""
 
 import asyncio
+import copy
 import json
 import logging
+import time as _time
 from typing import Any, Literal
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, union_all
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -296,6 +298,69 @@ async def _get_previous_qvapay_average(
         return None
 
 
+# --- Caché en memoria de las lecturas de tasas ---------------------------------
+# Un solo worker uvicorn: una caché de proceso basta (no hace falta Redis).
+# Los datos solo cambian cuando el scheduler guarda tasas nuevas, y ahí se invalida.
+RATES_CACHE_TTL_SECONDS = 45.0
+_rates_cache: dict[tuple, tuple[float, Any]] = {}
+_rates_lock = asyncio.Lock()
+
+
+def invalidate_rates_cache() -> None:
+    """Vacía la caché de lecturas (llamar tras guardar tasas nuevas)."""
+    _rates_cache.clear()
+
+
+def _cache_get(key: tuple) -> Any | None:
+    hit = _rates_cache.get(key)
+    if hit and _time.monotonic() - hit[0] < RATES_CACHE_TTL_SECONDS:
+        return copy.deepcopy(hit[1])
+    return None
+
+
+def _cache_put(key: tuple, value: Any) -> None:
+    _rates_cache[key] = (_time.monotonic(), copy.deepcopy(value))
+
+
+async def _previous_rates_map(
+    session: AsyncSession, source: str, snapshots: list[RateSnapshot]
+) -> dict[str, float | None]:
+    """Tasa anterior de todas las monedas de una fuente en UN viaje a la BD.
+
+    Antes: 1 consulta por moneda (~35 viajes de red secuenciales en /latest).
+    Misma regla que _get_previous_snapshot / _get_previous_qvapay_average: la fila más
+    reciente con fetched_at < el del snapshot actual. QvaPay devuelve el promedio
+    compra/venta; el resto, sell_rate (0 o NULL cuentan como sin dato).
+    """
+    result: dict[str, float | None] = {snap.currency: None for snap in snapshots}
+    parts = [
+        select(RateSnapshot.currency, RateSnapshot.buy_rate, RateSnapshot.sell_rate)
+        .where(
+            RateSnapshot.source == source,
+            RateSnapshot.currency == snap.currency,
+            RateSnapshot.fetched_at < snap.fetched_at,
+        )
+        .order_by(RateSnapshot.fetched_at.desc())
+        .limit(1)
+        .subquery()
+        .select()
+        for snap in snapshots
+    ]
+    if not parts:
+        return result
+    try:
+        rows = (await session.execute(union_all(*parts))).all()
+    except Exception as e:
+        logger.error(f"DB error in _previous_rates_map for {source}: {e}")
+        return result
+    for currency, buy, sell in rows:
+        if source == "qvapay":
+            result[currency] = _qvapay_average(buy, sell)
+        else:
+            result[currency] = float(sell) if sell else None
+    return result
+
+
 def _format_qvapay_snapshot(snap: RateSnapshot, prev_rate: float | None) -> dict | None:
     """Arma {rate (promedio), buy, sell, change, prev_rate} de un snapshot de QvaPay."""
     buy = float(snap.buy_rate) if snap.buy_rate is not None else None
@@ -313,6 +378,29 @@ def _format_qvapay_snapshot(snap: RateSnapshot, prev_rate: float | None) -> dict
 
 
 async def get_latest_rates(
+    session: AsyncSession, max_age_minutes: int = 120, use_cache: bool = False
+) -> dict[str, dict]:
+    """Últimas tasas de todas las fuentes (ver _compute_latest_rates).
+
+    Con use_cache=True reutiliza el cálculo durante RATES_CACHE_TTL_SECONDS (se invalida
+    al guardar tasas nuevas) y calcula una sola vez aunque lleguen varias peticiones a la vez.
+    Un resultado totalmente vacío (BD caída) no se cachea.
+    """
+    if not use_cache:
+        return await _compute_latest_rates(session, max_age_minutes)
+    key = ("latest", max_age_minutes)
+    if (hit := _cache_get(key)) is not None:
+        return hit
+    async with _rates_lock:
+        if (hit := _cache_get(key)) is not None:
+            return hit
+        value = await _compute_latest_rates(session, max_age_minutes)
+        if any(value.values()):
+            _cache_put(key, value)
+        return value
+
+
+async def _compute_latest_rates(
     session: AsyncSession, max_age_minutes: int = 120
 ) -> dict[str, dict]:
     """
@@ -419,6 +507,9 @@ async def get_latest_rates(
             else:
                 print(f"✅ {source}: Datos frescos ({age_minutes}min)")
 
+        # Tasas anteriores de todas las monedas de la fuente en una sola consulta
+        prev_map = await _previous_rates_map(session, source, snapshots)
+
         # Formatear según fuente - NUNCA retornar None, siempre dict
         if source in ["eltoque", "binance", "bcc"]:
             formatted = {}
@@ -430,10 +521,8 @@ async def get_latest_rates(
 
                 rate = float(snap.sell_rate)
 
-                # Obtener tasa anterior para calcular cambio
-                prev_rate = await _get_previous_snapshot(
-                    session, source, snap.currency, snap.fetched_at
-                )
+                # Tasa anterior (ya calculada en lote) para el indicador de cambio
+                prev_rate = prev_map.get(snap.currency)
 
                 formatted[snap.currency] = {
                     "rate": rate,
@@ -456,9 +545,7 @@ async def get_latest_rates(
                     )
                     continue
 
-                prev_rate = await _get_previous_qvapay_average(
-                    session, snap.currency, snap.fetched_at
-                )
+                prev_rate = prev_map.get(snap.currency)
                 info = _format_qvapay_snapshot(snap, prev_rate)
                 if info is None:
                     continue
@@ -478,14 +565,24 @@ async def get_latest_rates(
 
 
 async def get_source_rates(
-    session: AsyncSession, source: str, max_age_minutes: int = 120
+    session: AsyncSession, source: str, max_age_minutes: int = 120, use_cache: bool = False
 ) -> tuple[dict[str, dict], datetime | None]:
-    """Como _get_source_rates, pero un fallo de DB (p. ej. statement timeout) devuelve ({}, None)."""
+    """Como _get_source_rates, pero un fallo de DB (p. ej. statement timeout) devuelve ({}, None).
+
+    Con use_cache=True reutiliza el resultado (mismo TTL e invalidación que get_latest_rates);
+    los fallos de DB nunca se cachean.
+    """
+    key = ("source", source, max_age_minutes)
+    if use_cache and (hit := _cache_get(key)) is not None:
+        return hit
     try:
-        return await _get_source_rates(session, source, max_age_minutes)
+        value = await _get_source_rates(session, source, max_age_minutes)
     except SQLAlchemyError as e:
         logger.error(f"DB error in get_source_rates for {source}: {e}")
         return {}, None
+    if use_cache and value[0]:
+        _cache_put(key, value)
+    return value
 
 
 async def _get_source_rates(
@@ -565,6 +662,9 @@ async def _get_source_rates(
     else:
         print(f"✅ {source}: Datos frescos ({age_minutes}min)")
 
+    # Tasas anteriores de todas las monedas en una sola consulta
+    prev_map = await _previous_rates_map(session, source, snapshots)
+
     # Formatear datos - NUNCA retornar None
     formatted = {}
 
@@ -576,9 +676,7 @@ async def _get_source_rates(
                 continue
 
             rate = float(snap.sell_rate)
-            prev_rate = await _get_previous_snapshot(
-                session, source, snap.currency, snap.fetched_at
-            )
+            prev_rate = prev_map.get(snap.currency)
             formatted[snap.currency] = {
                 "rate": rate,
                 "change": calculate_change(rate, prev_rate),
@@ -592,9 +690,7 @@ async def _get_source_rates(
                 )
                 continue
 
-            prev_rate = await _get_previous_qvapay_average(
-                session, snap.currency, snap.fetched_at
-            )
+            prev_rate = prev_map.get(snap.currency)
             info = _format_qvapay_snapshot(snap, prev_rate)
             if info is not None:
                 formatted[snap.currency] = info

@@ -88,3 +88,12 @@ def binance_sample_data() -> list:
         # USDTUSDT no disponible en Binance US
     ]
 
+
+@pytest.fixture(autouse=True)
+def _clear_rates_cache():
+    """La caché en memoria de lecturas de tasas es de proceso: aislarla entre tests."""
+    from src.services import rates_service
+
+    rates_service.invalidate_rates_cache()
+    yield
+    rates_service.invalidate_rates_cache()
