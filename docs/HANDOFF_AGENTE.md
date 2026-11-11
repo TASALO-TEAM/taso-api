@@ -18,7 +18,7 @@ Actualizado: 2026-11-11. Plan completo: `tasalo/docs/plans/2026-11-10-codigo-mue
 - Medición (VPS, puerto 8040): `/latest` 1.45 s → 0.55 s frío / 3 ms con caché; `/eltoque` 0.345 s → 0.37 s / 2 ms; `history/daily` 180 días 6.7 s en frío (cuello: ~38 mil filas por red + Python, no la consulta).
 
 ## Pendiente (en orden)
-1. `taso-bot`: falta `sudo systemctl restart taso-bot` en el VPS (corre código anterior). Luego confirmar que arranca sin el aviso `Template base not found`.
+1. (Hecho) `taso-bot` reiniciado en el VPS el 2026-11-11 08:35 con 85af45f: activo, ~68 MB RAM, sin Traceback ni aviso `Template base not found`; jobs (alertas de imagen/precio, digest /tspl) arrancaron.
 2. (Hecho) Job "Captura diaria imagen ElToque (8:30 Cuba)" verificado el 2026-11-11: corrió 08:30:00, imagen nueva (618 KB), `stale=False`.
 3. Prueba de carga de madrugada (hora Cuba) con límite de tasa, midiendo RAM y latencia.
 4. Opcional: `history/daily` resuelto en SQL ("lectura más cercana a las 7:00 por día") para pasar de 6.7 s a milisegundos; rama aparte con test de equivalencia.
