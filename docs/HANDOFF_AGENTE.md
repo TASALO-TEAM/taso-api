@@ -19,7 +19,7 @@ Actualizado: 2026-11-11. Plan completo: `tasalo/docs/plans/2026-11-10-codigo-mue
 
 ## Pendiente (en orden)
 1. `taso-bot`: falta `sudo systemctl restart taso-bot` en el VPS (corre código anterior). Luego confirmar que arranca sin el aviso `Template base not found`.
-2. Verificar en `logs/taso-api.log` que el job "Captura diaria imagen ElToque (8:30 Cuba)" se ejecuta (registrado al arrancar; primera ejecución real: 8:30 Cuba del 2026-11-11).
+2. (Hecho) Job "Captura diaria imagen ElToque (8:30 Cuba)" verificado el 2026-11-11: corrió 08:30:00, imagen nueva (618 KB), `stale=False`.
 3. Prueba de carga de madrugada (hora Cuba) con límite de tasa, midiendo RAM y latencia.
 4. Opcional: `history/daily` resuelto en SQL ("lectura más cercana a las 7:00 por día") para pasar de 6.7 s a milisegundos; rama aparte con test de equivalencia.
 5. Opcional: `eltoque.py` traga en silencio 401/timeout/red; valorar `logger.warning`.
