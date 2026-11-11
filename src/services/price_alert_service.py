@@ -196,33 +196,3 @@ async def get_active_coins(db: AsyncSession) -> List[str]:
     except Exception as e:
         logger.error("DB error in get_active_coins: %s", e)
         return []
-
-
-async def get_active_alerts_for_coins(
-    db: AsyncSession,
-    coins: List[str],
-) -> List[PriceAlert]:
-    """
-    Obtiene todas las alertas ACTIVE para una lista de coins.
-    Usada por el checker para evaluar condiciones de disparo.
-
-    Args:
-        db: Sesión de base de datos
-        coins: Lista de símbolos a consultar
-
-    Returns:
-        Lista de PriceAlert activas
-    """
-    if not coins:
-        return []
-    stmt = (
-        select(PriceAlert)
-        .where(PriceAlert.status == "ACTIVE")
-        .where(PriceAlert.coin.in_([c.upper() for c in coins]))
-    )
-    try:
-        result = await db.execute(stmt)
-        return list(result.scalars().all())
-    except Exception as e:
-        logger.error("DB error in get_active_alerts_for_coins: %s", e)
-        return []

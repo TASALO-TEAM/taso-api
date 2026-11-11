@@ -22,7 +22,7 @@ from src.routers import admin as admin_router
 from src.routers import db_admin as db_admin_router
 from src.routers import stats as stats_router
 from src.routers import images as images_router
-from src.services.scheduler import create_scheduler, init_scheduler_status, init_cubanomic_scheduler, init_image_capture_scheduler, init_year_scheduler, init_rates_retention_scheduler
+from src.services.scheduler import create_scheduler, init_scheduler_status, init_image_capture_scheduler, init_year_scheduler, init_rates_retention_scheduler
 from src.routers import year as year_router
 from src.routers import alerts as alerts_router
 from src.routers import ads as ads_router
@@ -166,9 +166,6 @@ async def lifespan(app: FastAPI):
     # Iniciar scheduler
     scheduler = create_scheduler(database.async_session_factory)
     
-    # Inicializar job de Cubanomic
-    await init_cubanomic_scheduler(scheduler, database.async_session_factory)
-
     # Captura diaria de imagen ElToque (8:30 Cuba) — no-fatal si falla,
     # el endpoint on-demand de /toqueimg sigue funcionando igual
     try:

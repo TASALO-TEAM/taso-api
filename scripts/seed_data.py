@@ -27,7 +27,7 @@ from src.config import get_settings
 from src.database import get_engine, get_session_maker
 from src.models.rate_snapshot import RateSnapshot
 from src.models.scheduler_status import SchedulerStatus
-from src.models.rates import CubanomicRate, HistorySnapshot
+from src.models.rates import HistorySnapshot
 from src.models.image_snapshot import ImageSnapshot
 from src.models.image_alert import UserImageAlert
 from src.models.bot_stats import BotUser, BotCommandStat
@@ -40,7 +40,6 @@ async def clear_all_tables(db: AsyncSession) -> None:
     await db.execute(delete(UserImageAlert))
     await db.execute(delete(BotUser))
     await db.execute(delete(RateSnapshot))
-    await db.execute(delete(CubanomicRate))
     await db.execute(delete(HistorySnapshot))
     await db.execute(delete(ImageSnapshot))
     await db.execute(delete(SchedulerStatus))
@@ -162,20 +161,6 @@ async def seed_rate_snapshots(db: AsyncSession, quiet: bool = False) -> list[Rat
     return snapshots
 
 
-async def seed_cubanomic_rate(db: AsyncSession, quiet: bool = False) -> CubanomicRate:
-    """Create a CubanomicRate record (daily aggregate)."""
-    rate = CubanomicRate(
-        usd_rate=Decimal("360.00"),
-        eur_rate=Decimal("330.00"),
-        mlc_rate=Decimal("240.00"),
-        fetched_at=datetime.now(timezone.utc)
-    )
-    db.add(rate)
-    if not quiet:
-        print(f"✓ CubanomicRate: USD={rate.usd_rate}, EUR={rate.eur_rate}, MLC={rate.mlc_rate}")
-    return rate
-
-
 async def seed_history_snapshot(db: AsyncSession, quiet: bool = False) -> HistorySnapshot:
     """Create a HistorySnapshot (aggregated 15-min snapshot)."""
     snap = HistorySnapshot(
@@ -250,7 +235,6 @@ async def seed_all(clear: bool = False, quiet: bool = False) -> None:
             await seed_bot_command_stat(db, user, quiet)
 
             await seed_rate_snapshots(db, quiet)
-            await seed_cubanomic_rate(db, quiet)
             await seed_history_snapshot(db, quiet)
             await seed_image_snapshot(db, quiet)
             await seed_scheduler_status(db, quiet)

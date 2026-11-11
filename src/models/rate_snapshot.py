@@ -1,7 +1,6 @@
 """RateSnapshot model for storing exchange rate snapshots."""
 
 from datetime import datetime, timezone
-from decimal import Decimal
 from sqlalchemy import Column, Integer, String, Numeric, DateTime, func
 
 from src.database import Base

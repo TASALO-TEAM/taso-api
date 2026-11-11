@@ -2,7 +2,6 @@
 
 from src.models.rate_snapshot import RateSnapshot
 from src.models.scheduler_status import SchedulerStatus
-from src.models.rates import CubanomicRate
 from src.models.image_snapshot import ImageSnapshot
 from src.models.image_alert import UserImageAlert
 from src.models.year_quote import YearQuote
@@ -15,7 +14,7 @@ from src.models.tspl_subscription import TsplSubscription
 from src.models.app_message import AppMessage
 
 __all__ = [
-    "RateSnapshot", "SchedulerStatus", "CubanomicRate",
+    "RateSnapshot", "SchedulerStatus",
     "ImageSnapshot", "UserImageAlert",
     "YearQuote", "YearSubscription", "YearExtraFlag",
     "Ad", "Ticket", "ApiRequestLog", "TsplSubscription", "AppMessage",

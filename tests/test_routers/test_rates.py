@@ -212,66 +212,6 @@ def test_empty_database(client):
     assert isinstance(data["data"]["eltoque"], dict)
 
 
-def test_get_cubanomic_rates_structure(client):
-    """GET /api/v1/tasas/cubanomic retorna estructura correcta."""
-    response = client.get("/api/v1/tasas/cubanomic")
-
-    # Should return 200 even if Redis is not available (fallback)
-    assert response.status_code == 200
-    data = response.json()
-
-    assert data["source"] == "cubanomic"
-    assert "rates" in data
-    assert "updated_at" in data
-
-
-def test_get_cubanomic_rates_with_max_age(client):
-    """GET /api/v1/tasas/cubanomic acepta max_age_minutes param."""
-    response = client.get("/api/v1/tasas/cubanomic?max_age_minutes=60")
-
-    # Should validate min value (60)
-    assert response.status_code in [200, 422]
-
-
-def test_get_cubanomic_rates_invalid_max_age(client):
-    """GET /api/v1/tasas/cubanomic rechaza max_age_minutes inválido."""
-    # Below minimum (60)
-    response = client.get("/api/v1/tasas/cubanomic?max_age_minutes=30")
-    assert response.status_code == 422
-
-    # Above maximum (2880)
-    response = client.get("/api/v1/tasas/cubanomic?max_age_minutes=3000")
-    assert response.status_code == 422
-
-
-def test_get_cubanomic_history_default(client):
-    """GET /api/v1/tasas/history/cubanomic returns historical data."""
-    response = client.get("/api/v1/tasas/history/cubanomic")
-    # Should return 200 even if Redis/API is unavailable (returns empty data)
-    assert response.status_code == 200
-    data = response.json()
-    assert "ok" in data
-    assert "data" in data
-    assert "count" in data
-
-
-def test_get_cubanomic_history_with_days(client):
-    """GET /api/v1/tasas/history/cubanomic accepts days parameter."""
-    response = client.get("/api/v1/tasas/history/cubanomic?days=60")
-    assert response.status_code == 200
-
-
-def test_get_cubanomic_history_invalid_days(client):
-    """GET /api/v1/tasas/history/cubanomic rejects invalid days."""
-    # Too low (min is 7)
-    response = client.get("/api/v1/tasas/history/cubanomic?days=5")
-    assert response.status_code == 422
-
-    # Too high (max is 730)
-    response = client.get("/api/v1/tasas/history/cubanomic?days=800")
-    assert response.status_code == 422
-
-
 # --- QvaPay -----------------------------------------------------------------
 
 

@@ -1,4 +1,4 @@
-# TASALO API
+﻿# TASALO API
 
 [![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)](https://github.com/tasalo/taso-api/releases)
 [![Python](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
@@ -339,7 +339,6 @@ Redis se usa para cachear datos de Cubanomic y reducir la carga en la API extern
 
 ```ini
 REDIS_URL=redis://localhost:6379/0
-REDIS_TTL_CUBANOMIC=86400  # 24 horas (cache latest)
 ```
 
 ### Instalación

@@ -1,4 +1,4 @@
-"""Alembic env.py configured for async SQLAlchemy."""
+﻿"""Alembic env.py configured for async SQLAlchemy."""
 
 import asyncio
 from logging.config import fileConfig
@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 from src.database import Base, _parse_ssl_params
-from src.models import RateSnapshot, SchedulerStatus, CubanomicRate
+from src.models import RateSnapshot, SchedulerStatus
 from src.config import get_settings
 from sqlalchemy.engine import make_url
 

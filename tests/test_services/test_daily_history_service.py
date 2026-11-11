@@ -1,4 +1,4 @@
-"""Tests del historial diario (un precio por fecha de Cuba, lectura más cercana a las 7:00)."""
+﻿"""Tests del historial diario (un precio por fecha de Cuba, lectura más cercana a las 7:00)."""
 
 from datetime import date, datetime, timezone
 from unittest.mock import AsyncMock, patch
@@ -156,5 +156,5 @@ class TestEndpoints:
         assert body["data"] == {"eltoque": {"USD": [{"date": "2026-10-08", "rate": 510.0}]}}
 
     def test_las_rutas_viejas_siguen_funcionando(self, client):
-        # /history/local y /history/cubanomic no deben quedar tapadas por las rutas nuevas.
+        # /history/local no debe quedar tapadas por las rutas nuevas.
         assert client.get("/api/v1/tasas/history/local?days=1").status_code == 200
