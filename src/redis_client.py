@@ -171,23 +171,6 @@ class RedisClient:
             logger.error(f"Error verificando clave '{key}': {e}")
             return False
 
-    async def health_check(self) -> bool:
-        """
-        Verificar estado de la conexión con Redis.
-        
-        Returns:
-            True si Redis está conectado y responde, False en caso contrario
-        """
-        if self._client is None:
-            return False
-        
-        try:
-            await self._client.ping()
-            return True
-        except RedisError as e:
-            logger.error(f"Redis health check falló: {e}")
-            return False
-
     @property
     def client(self) -> Optional[Redis]:
         """

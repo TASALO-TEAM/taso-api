@@ -11,11 +11,10 @@ quotes keep their order but may now occupy a different calendar day.
 
 import json
 import logging
-import math
 import os
 import random
 from datetime import datetime
-from typing import Optional, Sequence
+from typing import Optional
 
 from sqlalchemy import select, func as sql_func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,19 +77,6 @@ async def _list_quotes_ordered(db: AsyncSession) -> list[YearQuote]:
     """Return all quotes ordered by their id ASC."""
     result = await db.execute(select(YearQuote).order_by(YearQuote.id))
     return list(result.scalars().all())
-
-
-async def _get_quote_by_seq(db: AsyncSession, seq: int) -> Optional[YearQuote]:
-    """Return quote at 0-indexed position *seq* in the ordered list, or None.
-
-    Raises ValueError if seq < 0.
-    """
-    if seq < 0:
-        raise ValueError("seq must be >= 0")
-    quotes = await _list_quotes_ordered(db)
-    if seq >= len(quotes):
-        return None
-    return quotes[seq]
 
 
 async def reindex_quotes(db: AsyncSession) -> int:
@@ -156,16 +142,6 @@ def _get_quote_seq(index: int, target_year: int | None = None) -> QuoteContext:
         year=next_year,
         is_extra=True,
     )
-
-
-def _get_quote_context_from_seq(index: int) -> QuoteContext:
-    """Public-facing wrapper for _get_quote_seq (for use in routers)."""
-    return _get_quote_seq(index)
-
-
-def _get_quote_context(index: int, current_year: int) -> QuoteContext:
-    """Deprecated – use _get_quote_seq instead. Kept for backward compat."""
-    return _get_quote_seq(index)
 
 
 # ---------------------------------------------------------------------------
@@ -368,16 +344,6 @@ async def delete_quote(db: AsyncSession, quote_id: int) -> bool:
     # Reindex remaining quotes so maps are contiguous again
     await reindex_quotes(db)
     return True
-
-
-async def get_quote_by_seq(db: AsyncSession, seq: int) -> Optional[YearQuote]:
-    """Get quote at 0-indexed *seq* position in the ordered list."""
-    if seq < 0:
-        return None
-    quotes = await _list_quotes_ordered(db)
-    if seq >= len(quotes):
-        return None
-    return quotes[seq]
 
 
 async def get_all_quotes(db: AsyncSession) -> QuoteListResponse:
@@ -585,19 +551,6 @@ async def set_extra_flag_asked(db: AsyncSession, year: int, asked: bool = True) 
 # ---------------------------------------------------------------------------
 # Extended daily quote (for add-quote confirmation flow)
 # ---------------------------------------------------------------------------
-
-
-async def get_extended_daily_quote(db: AsyncSession) -> dict:
-    """Return full year state + daily quote as a flat dict (for /y add confirmation)."""
-    progress = get_year_progress()
-    daily = await get_daily_quote(db)
-    stats = await get_quote_stats(db)
-    return {
-        "ok": True,
-        "progress": progress.model_dump(),
-        "quote": daily.model_dump(),
-        "stats": stats.model_dump(),
-    }
 
 
 # ---------------------------------------------------------------------------

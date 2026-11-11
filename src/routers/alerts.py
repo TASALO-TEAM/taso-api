@@ -19,7 +19,6 @@ from src.services.price_alert_service import (
     delete_all_user_alerts,
     mark_triggered,
     get_active_coins,
-    get_active_alerts_for_coins,
 )
 from src.schemas.alert import (
     PriceAlertSchema,

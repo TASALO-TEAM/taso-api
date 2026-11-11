@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from typing import Callable, Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from apscheduler.triggers.cron import CronTrigger
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

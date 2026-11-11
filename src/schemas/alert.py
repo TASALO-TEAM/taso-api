@@ -42,12 +42,6 @@ class AlertCreateSchema(BaseModel):
         return v.strip().upper()
 
 
-class AlertDeleteSchema(BaseModel):
-    """Schema para eliminar una alerta específica por id."""
-
-    alert_id: int
-
-
 class ActiveCoinsResponse(BaseModel):
     """Lista de coins que tienen al menos una alerta ACTIVE."""
 

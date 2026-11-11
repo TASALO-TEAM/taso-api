@@ -304,40 +304,6 @@ async def get_api_performance_stats(session: AsyncSession) -> ApiPerformanceStat
     )
 
 
-async def log_api_request(
-    session: AsyncSession,
-    method: str,
-    path: str,
-    status_code: int,
-    duration_ms: int,
-    client_id: Optional[str] = None,
-) -> None:
-    """
-    Registra una request HTTP individual en api_request_log.
-
-    Llamado desde el middleware track_requests (main.py) de forma
-    fire-and-forget — si falla, no debe afectar la respuesta al cliente.
-
-    Args:
-        session: SQLAlchemy async session (propia, no la del request)
-        method: Método HTTP (GET, POST, etc.)
-        path: Path del endpoint solicitado
-        status_code: Código de respuesta HTTP
-        duration_ms: Duración de la request en milisegundos
-        client_id: Identificador del cliente (bot/app/ext/extmf/web/unknown)
-    """
-    entry = ApiRequestLog(
-        method=method,
-        path=path,
-        status_code=status_code,
-        duration_ms=duration_ms,
-        client_id=client_id,
-        created_at=datetime.now(timezone.utc),
-    )
-    session.add(entry)
-    await session.commit()
-
-
 async def get_api_usage_stats(session: AsyncSession, window: str = "24h") -> ApiUsageStats:
     """
     Obtiene el uso de la API pública desglosado por cliente y por endpoint.
