@@ -5,7 +5,7 @@ diferencia del plan viejo (2026-04-27-snapshot-cleanup-retention-plan.md,
 nunca implementado), esto es borrado simple sin agregación: las gráficas
 de análisis para las que se pensó ese histórico ya no son de interés.
 
-No toca CubanomicRate (1 fila/día, no es problema de espacio).
+No toca la tabla cubanomic_rates (huerfana, 1 fila/dia).
 """
 
 from __future__ import annotations

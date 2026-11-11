@@ -29,7 +29,6 @@ def create_scheduler(db_factory: Callable) -> AsyncIOScheduler:
 
     Jobs:
     - refresh_all: Ejecuta fetch_all_sources() cada N minutos (env)
-    - cubanomic_daily: Ejecuta fetch_cubanomic_daily() a las 00:01 UTC
     - eltoque_image_capture: Captura imagen diaria de ElToque a las 8:30 hora de Cuba
 
     Returns:
@@ -78,37 +77,6 @@ async def init_scheduler_status(db_factory: Callable) -> None:
         except Exception as e:
             logger.warning(f"⚠️ [Scheduler] No se pudo inicializar el estado: {e}")
             await session.rollback()
-
-
-async def init_cubanomic_scheduler(
-    scheduler: AsyncIOScheduler,
-    db_factory: Callable[[], AsyncSession]
-) -> None:
-    """Initialize Cubanomic daily fetch job at 00:01 UTC."""
-
-    async def fetch_cubanomic_job() -> None:
-        db = db_factory()
-        try:
-            async with db:
-                result = await rates_service.fetch_cubanomic_daily(db)
-                if result.get("ok"):
-                    logger.info(f"🇨🇺 Cubanomic fetch: {result}")
-                else:
-                    logger.error(f"❌ Cubanomic fetch failed: {result.get('error')}")
-        except Exception as e:
-            logger.error(f"❌ Cubanomic fetch failed: {e}")
-
-    scheduler.add_job(
-        fetch_cubanomic_job,
-        trigger="cron",
-        hour=0,
-        minute=1,
-        timezone="UTC",
-        id="cubanomic_daily",
-        name="Fetch Cubanomic rates daily",
-        replace_existing=True,
-    )
-    logger.info("✅ [Scheduler] Cubanomic daily job added (00:01 UTC)")
 
 
 async def init_image_capture_scheduler(

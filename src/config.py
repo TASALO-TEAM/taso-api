@@ -45,10 +45,6 @@ class Settings(BaseSettings):
         default="redis://localhost:6379/0",
         description="Redis connection URL for caching"
     )
-    redis_ttl_cubanomic: int = Field(
-        default=86400,  # 24 hours in seconds
-        description="TTL for Cubanomic cache in seconds"
-    )
 
     # Avisos de arranque/apagado/errores al grupo de soporte (mismo grupo
     # que ya usan taso-gcg y taso-bot). taso-api no tiene bot de Telegram

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 class SchedulerJobInfo(BaseModel):
     """Estado de un job individual del scheduler (APScheduler)."""
 
-    id: str = Field(..., description="Id del job (ej. 'refresh_all', 'cubanomic_daily')")
+    id: str = Field(..., description="Id del job (ej. 'refresh_all', 'eltoque_image_capture')")
     name: str = Field(..., description="Nombre descriptivo del job")
     next_run_at: datetime | None = Field(None, description="Próxima ejecución programada (None si está pausado)")
     # Los siguientes 4 campos solo se llenan para jobs con tracking persistido

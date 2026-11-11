@@ -89,7 +89,7 @@ async def get_scheduler_status(
     Obtiene el estado de TODOS los jobs registrados en el scheduler.
 
     Antes solo exponía el job "refresh_all" (con envoltorio {scheduler:
-    {...}}); ahora lista cualquier job de APScheduler (cubanomic_daily,
+    {...}}); ahora lista cualquier job de APScheduler (eltoque_image_capture,
     year_daily_alert, etc.), agregando last_run/last_success/error_count/
     last_error solo para "refresh_all", que es el único con tracking
     persistido en la tabla scheduler_status. Ver
