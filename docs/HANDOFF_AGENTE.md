@@ -1,35 +1,34 @@
+
 # HANDOFF — taso-api / taso-bot (código muerto + recursos del VPS)
 
-Actualizado: 2026-11-10. Plan completo: `docs/plans/2026-11-10-codigo-muerto-y-resiliencia-api.md` (en la raíz `tasalo/docs`).
+Actualizado: 2026-11-11. Plan completo: `tasalo/docs/plans/2026-11-10-codigo-muerto-y-resiliencia-api.md`.
 
 ## Decisiones del dueño (Ersus)
-- Cubanomic: quitar scraper de tasas, rutas y job del scheduler. **NO tocar la captura de imagen** (`image_capture.py`, `/images/eltoque*`, `/toqueimg` del bot): esa usa `iframe.cubanomic.com` y sigue viva.
-- Prueba de carga contra el VPS: autorizada, de madrugada, con límite de tasa.
-- Orden: primero bloque rápido (N+1, caché, ETag, VACUUM), medir, luego el resto.
+- Cubanomic: se quitó scraper de tasas, rutas y job. **NO tocar la captura de imagen** (`image_capture.py`, `/images/eltoque*`, `/toqueimg`): usa `iframe.cubanomic.com` y sigue viva (`scrapers/cubanomic.py` se conserva por eso).
+- Prueba de carga al VPS: autorizada, de madrugada, con límite de tasa.
 - Rate limit por IP: no.
-- Hora de Cuba: Cuba mantiene la hora de verano (UTC-4) aunque otros países ya cambiaron. La captura de imagen va a las **8:30 Cuba** (= 7:30 Miami hoy). Se usa `timezone="America/Havana"` y el tzdata del VPS (2026f) da -04:00 hoy; verificado.
+- Hora de Cuba: mantiene hora de verano (UTC-4) todo el año. Captura de imagen a las **8:30 Cuba** (`timezone="America/Havana"`). El VPS ya corre en hora de Cuba (`date` = CDT).
 
-## Hecho
-- API PR #5 fusionado a `main` (8881eb0): N+1 fuera, caché en memoria (TTL 45 s, invalidada en `refresh_all`), ETag + `Cache-Control: public, max-age=30`, captura de imagen 8:30 Cuba, textos corregidos. 8 tests nuevos pasan (`tests/test_services/test_rates_batch_cache.py`).
-- VPS: `git pull` hecho en `/home/ersus/tasalo/taso-api` (8881eb0) y el servicio ya fue reiniciado (17:33 CDT). DESPUÉS: `/latest` en frío ≈ 0.52 s (antes 1.45 s), con caché ≈ 4 ms; `/eltoque` en frío ≈ 0.50 s, con caché ≈ 3 ms; 304 con `If-None-Match` ≈ 2.5 ms; RSS ≈ 121 MB.
-- Bot: PR #5 (imports perezosos) ya estaba fusionado.
-
-## Medición ANTES (main desplegado, curl local en el VPS)
-- `/api/v1/tasas/latest` ≈ 1.45 s; `/api/v1/tasas/eltoque` ≈ 0.345 s; RSS uvicorn ≈ 126 MB (RAM total 1966 MB, swap ~870/1023 usado).
-- Repetir los mismos curl tras el reinicio y comparar.
+## Hecho (todo en `main` y desplegado salvo lo marcado)
+- API: N+1 de `/latest` y `/eltoque` fuera, caché en memoria (TTL 45 s), ETag + Cache-Control, captura 8:30 Cuba (PR #5).
+- API: `logger` definido en `binance.py`/`eltoque.py` (PR #6), `print()` → `logger` (PR #7), pool de conexiones + registro de peticiones por lotes con filtro de escáneres (PR #8), código muerto + Cubanomic de tasas (PR #9, commit 1334fb3). VPS reiniciado con todo esto.
+- BD: `VACUUM (ANALYZE) rate_snapshots` hecho (193 mil filas muertas → 0). La poda de `api_request_log` ya existía (30 días en `refresh_all`).
+- Bot: imports perezosos (PR #5) y código muerto (PR #6, 85af45f; cadena de imágenes heredada, `file_manager.py`, `check_feature_access`). En el VPS el código ya está en disco.
+- VPS: unidades huérfanas `bbchat`, `bia`, `main`, `rss` eliminadas (copias en `/home/ersus/backup-units-bbalert/`).
+- Medición (VPS, puerto 8040): `/latest` 1.45 s → 0.55 s frío / 3 ms con caché; `/eltoque` 0.345 s → 0.37 s / 2 ms; `history/daily` 180 días 6.7 s en frío (cuello: ~38 mil filas por red + Python, no la consulta).
 
 ## Pendiente (en orden)
-0. (Hecho en local, SIN commit ni despliegue) `src/scrapers/binance.py` y `eltoque.py` usaban `logger` sin definirlo (NameError latente): se añadió `import logging` + `logger = logging.getLogger(__name__)`. En Binance la línea "Símbolos faltantes" pasó de info a debug (el aviso con el conteo sigue en warning). Falta: commit en rama `fix/scrapers-logger`, push, PR, `git pull` + `sudo systemctl restart taso-api` en el VPS, y correr tests dirigidos. Opcional: `eltoque.py` traga en silencio 401/timeout/red (devuelve None); valorar `logger.warning`. `bcc.py` no tiene logger pero tampoco lo usa.
-1. (Hecho) Reinicio + medición DESPUÉS. Nota: `/eltoque` en frío subió de 0.345 s a ~0.50 s (ahora se serializa con el candado de caché); revisar si vale la pena.
-2. API: pool de conexiones, registro de peticiones por lotes (filtrar escáneres), `print()` → `logger`, `EXPLAIN ANALYZE` de `history/daily`, `VACUUM (ANALYZE) rate_snapshots`, retención de `api_request_log`, prueba de carga.
-3. API: código muerto + Cubanomic (rates), ramas `refactor:` separadas.
-4. Bot: código muerto (cadena de imágenes heredada, stubs BBAlert, logger sin uso) + `httpx.AsyncClient` compartido en `ai_logic.py`. Actualizar el comentario "7:05" en `src/services/daily_image_sender.py` (~línea 140) a 8:30.
-5. Borrar ramas fusionadas.
+1. `taso-bot`: falta `sudo systemctl restart taso-bot` en el VPS (corre código anterior). Luego confirmar que arranca sin el aviso `Template base not found`.
+2. Verificar en `logs/taso-api.log` que el job "Captura diaria imagen ElToque (8:30 Cuba)" se ejecuta (registrado al arrancar; primera ejecución real: 8:30 Cuba del 2026-11-11).
+3. Prueba de carga de madrugada (hora Cuba) con límite de tasa, midiendo RAM y latencia.
+4. Opcional: `history/daily` resuelto en SQL ("lectura más cercana a las 7:00 por día") para pasar de 6.7 s a milisegundos; rama aparte con test de equivalencia.
+5. Opcional: `eltoque.py` traga en silencio 401/timeout/red; valorar `logger.warning`.
+6. Descartado a propósito (ponytail): `httpx.AsyncClient` compartido en `ai_logic.py` (las llamadas a Groq son poco frecuentes; el ahorro es un handshake TLS).
+7. README de taso-bot aún menciona `image_generator.py` (3 líneas); tabla `cubanomic_rates` queda huérfana en la BD (sin migración).
 
 ## Ojo
-- Alertas de imagen del bot configuradas antes de las 8:30 Cuba verán la imagen del día anterior (el bot reintenta 3 veces y sigue con la última disponible). Valorar si se avisa o se valida la hora mínima.
-- VPS: `bbchat`, `bia`, `main`, `rss` (units de otros bots, `/home/ersus/{bbchat,bot/bia,bot/main,rss}`) están en bucle de reinicio (~77 mil reinicios, exit 203/EXEC = el ejecutable no existe). Consumen CPU/log para nada; pedir OK al dueño antes de `systemctl disable --now`.
-- Tests locales: el `.env` apunta a servicios reales y `TestClient(app)` se cuelga al arrancar el lifespan; ejecutar tests dirigidos: `uv run --frozen --with pytest --with pytest-asyncio --with pytest-timeout python -m pytest --timeout=40 <archivo>`. `test_redis_settings_default_values` falla por el `.env` local (preexistente).
-- Windows + PowerShell: para ssh, enviar scripts por stdin quitando `\r` (`($sh -replace "`r","") | ssh pan 'bash -s'`); las comillas dobles anidadas se rompen.
-- `ssh pan` entra sin clave; `sudo` pide contraseña (pedírsela al dueño).
+- Alertas de imagen del bot configuradas antes de las 8:30 Cuba reciben la imagen del día anterior (el bot reintenta 3 veces y sigue con la última). Pendiente decidir si se avisa o se valida hora mínima.
+- Tests locales: el `.env` apunta a servicios reales y `TestClient(app)` se cuelga; usar `uv run --frozen --with pytest --with pytest-asyncio --with pytest-timeout python -m pytest --timeout=40 <archivo>`. Fallos preexistentes en `main`: `test_rates_service` ×3, `test_bcc` ×2, `test_redis_settings_default_values` (`.env` local). En el bot, 13 fallos preexistentes y `test_p_handler.py` no se recolecta (`p_more_callback` no existe).
+- Windows + PowerShell: para ssh enviar scripts por stdin quitando `\r`; las comillas dobles anidadas se rompen.
+- `ssh pan` entra sin clave; `sudo` pide contraseña (pedírsela al dueño, no guardarla).
 - Un hook de pre-commit sube la versión en cada commit (`pyproject.toml`).
