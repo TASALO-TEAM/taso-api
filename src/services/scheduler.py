@@ -2,7 +2,7 @@
 
 import logging
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -29,7 +29,7 @@ def create_scheduler(db_factory: Callable) -> AsyncIOScheduler:
 
     Jobs:
     - refresh_all: Ejecuta fetch_all_sources() cada N minutos (env)
-    - eltoque_image_capture: Captura imagen diaria de ElToque a las 8:30 hora de Cuba
+    - eltoque_image_capture: Captura imagen diaria de ElToque a las 8:15 hora de Cuba
 
     Returns:
         AsyncIOScheduler configurado
@@ -83,7 +83,7 @@ async def init_image_capture_scheduler(
     scheduler: AsyncIOScheduler,
     db_factory: Callable[[], AsyncSession]
 ) -> None:
-    """Captura diaria de la imagen de El Toque a las 8:30 hora de Cuba.
+    """Captura diaria de la imagen de El Toque a las 8:15 hora de Cuba.
 
     Cron de hora fija (timezone="America/Havana") — corre todos los días
     pase lo que pase, independiente de si algún usuario usó /toqueimg. Usa
@@ -92,35 +92,52 @@ async def init_image_capture_scheduler(
     """
     from src.services.image_capture import capture_and_store_image
 
-    async def capture_eltoque_image_job() -> None:
+    # El Toque corta a las 8:00 (Cuba). Si la imagen sigue siendo la de ayer o la
+    # descarga falla, se reintenta cada 5 min hasta ~35 min despues de la hora fija
+    # (el despachador del bot espera ese mismo margen).
+    reintentos_max = 7
+
+    async def capture_eltoque_image_job(intento: int = 0) -> None:
         db = db_factory()
+        pendiente = False
         try:
             async with db:
                 result = await capture_and_store_image(db, source="eltoque")
                 if result.get("success"):
+                    pendiente = bool(result.get("stale"))
                     logger.info(
-                        "📸 Captura diaria de ElToque OK (stale=%s)",
-                        result.get("stale", False),
+                        "Captura diaria de ElToque OK (stale=%s, intento=%d)",
+                        result.get("stale", False), intento,
                     )
                 else:
-                    logger.error(
-                        "❌ Captura diaria de ElToque falló: %s",
-                        result.get("error"),
-                    )
+                    pendiente = True
+                    logger.error("Captura diaria de ElToque fallo: %s", result.get("error"))
         except Exception:
-            logger.exception("❌ Captura diaria de ElToque falló")
+            pendiente = True
+            logger.exception("Captura diaria de ElToque fallo")
+        if pendiente and intento < reintentos_max:
+            scheduler.add_job(
+                capture_eltoque_image_job,
+                trigger="date",
+                run_date=datetime.now(timezone.utc) + timedelta(minutes=5),
+                kwargs={"intento": intento + 1},
+                id=f"eltoque_image_capture_retry_{intento + 1}",
+                misfire_grace_time=120,
+                replace_existing=True,
+            )
 
     scheduler.add_job(
         capture_eltoque_image_job,
         trigger="cron",
         hour=8,
-        minute=30,
+        minute=15,
         timezone="America/Havana",
         id="eltoque_image_capture",
-        name="Captura diaria imagen ElToque (8:30 Cuba)",
+        misfire_grace_time=300,
+        name="Captura diaria imagen ElToque (8:15 Cuba)",
         replace_existing=True,
     )
-    logger.info("✅ [Scheduler] ElToque image capture job added (08:30 Cuba)")
+    logger.info("[Scheduler] ElToque image capture job added (08:15 Cuba)")
 
 
 async def init_year_scheduler(
