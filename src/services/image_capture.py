@@ -11,11 +11,13 @@ coincide con lo dibujado en ella (mismo instante), sin depender de un
 endpoint cacheado aparte que podría desincronizarse.
 """
 
+import hashlib
 import json
 import logging
 import os
 from datetime import datetime, timezone
 from typing import Dict, Optional
+from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -27,6 +29,21 @@ logger = logging.getLogger(__name__)
 
 IMAGE_STORAGE_PATH = "/home/ersus/tasalo/taso-api/static/images/eltoque"
 CANONICAL_FILENAME = "eltoque_post.png"
+CUBA_TZ = ZoneInfo("America/Havana")
+
+
+def _sha256(path: str) -> Optional[str]:
+    try:
+        with open(path, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except OSError:
+        return None
+
+
+def _cuba_date(dt: datetime):
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(CUBA_TZ).date()
 
 
 def get_storage_path() -> str:
@@ -58,9 +75,29 @@ async def capture_and_store_image(
     output_path = get_canonical_path()
     await ensure_directory_exists(output_path)
 
+    previous = await get_latest_image(db, source)
+    hash_before = _sha256(output_path)
+
     download_result = await download_eltoque_post_image(output_path)
 
     if download_result.get("success"):
+        # El Toque corta a las 8:00 (Cuba) y a veces tarda en publicar: si el archivo
+        # es identico al de un dia anterior, aun no hay imagen de hoy. No se refresca
+        # captured_at (el bot lo usa para saber si la imagen es de hoy).
+        if (
+            hash_before
+            and previous
+            and _sha256(output_path) == hash_before
+            and _cuba_date(previous.captured_at) < datetime.now(CUBA_TZ).date()
+        ):
+            logger.warning("[capture] Imagen identica a la de %s: aun no hay imagen de hoy (stale)", _cuba_date(previous.captured_at))
+            return {
+                "success": True,
+                "image": previous,
+                "cached": True,
+                "stale": True,
+                "error": "imagen sin cambios desde un dia anterior",
+            }
         logger.info("✅ [capture] Imagen refrescada: %s", output_path)
         rates = await _fetch_rates_for_snapshot()
         return await _upsert_snapshot(db, source, output_path, download_result, rates)

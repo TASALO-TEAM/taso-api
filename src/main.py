@@ -166,7 +166,7 @@ async def lifespan(app: FastAPI):
     # Iniciar scheduler
     scheduler = create_scheduler(database.async_session_factory)
     
-    # Captura diaria de imagen ElToque (8:30 Cuba) — no-fatal si falla,
+    # Captura diaria de imagen ElToque (8:15 Cuba, con reintentos) — no-fatal si falla,
     # el endpoint on-demand de /toqueimg sigue funcionando igual
     try:
         await init_image_capture_scheduler(scheduler, database.async_session_factory)
