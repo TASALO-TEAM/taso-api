@@ -7,7 +7,7 @@ Actualizado: 2026-11-11. Plan completo: `tasalo/docs/plans/2026-11-10-codigo-mue
 - Cubanomic: se quitó scraper de tasas, rutas y job. **NO tocar la captura de imagen** (`image_capture.py`, `/images/eltoque*`, `/toqueimg`): usa `iframe.cubanomic.com` y sigue viva (`scrapers/cubanomic.py` se conserva por eso).
 - Prueba de carga al VPS: autorizada, de madrugada, con límite de tasa.
 - Rate limit por IP: no.
-- Hora de Cuba: mantiene hora de verano (UTC-4) todo el año. Captura de imagen a las **8:30 Cuba** (`timezone="America/Havana"`). El VPS ya corre en hora de Cuba (`date` = CDT).
+- Hora de Cuba: mantiene hora de verano (UTC-4) todo el año. Captura de imagen a las **8:15 Cuba** (antes 8:30; ver sesion 2026-11-14 al final) (`timezone="America/Havana"`). El VPS ya corre en hora de Cuba (`date` = CDT).
 
 ## Hecho (todo en `main` y desplegado salvo lo marcado)
 - API: N+1 de `/latest` y `/eltoque` fuera, caché en memoria (TTL 45 s), ETag + Cache-Control, captura 8:30 Cuba (PR #5).
@@ -32,3 +32,14 @@ Actualizado: 2026-11-11. Plan completo: `tasalo/docs/plans/2026-11-10-codigo-mue
 - Windows + PowerShell: para ssh enviar scripts por stdin quitando `\r`; las comillas dobles anidadas se rompen.
 - `ssh pan` entra sin clave; `sudo` pide contraseña (pedírsela al dueño, no guardarla).
 - Un hook de pre-commit sube la versión en cada commit (`pyproject.toml`).
+
+
+## Sesion 2026-11-14 — captura a las 8:15 con hash y reintentos (decidido por Ersus: "dale")
+- **Por que:** hasta el 9/11 el servidor estaba en CST y el cron de "7:05" corria a las 8:05 reales (despues del corte de El Toque, 8:00 Cuba). Al corregir la zona horaria paso a las 7:05 reales (imagen vieja) y se tapo moviendolo a 8:30. Hay 3 capturas hechas entre 8:05 y 8:13 y las tres eran nuevas, por eso 8:15.
+- **taso-api (PR #10, `3c6a651`, v0.13.2.0):** cron 8:15 `America/Havana`. `capture_and_store_image` compara el sha256 del archivo con el de antes de descargar: si es identico y el ultimo snapshot es de un dia anterior (fecha Cuba), devuelve `stale=True` **sin refrescar `captured_at`** (el bot usa ese campo para saber si la imagen es de hoy). El job reintenta cada 5 min hasta 7 veces (~8:50) si `stale` o falla (ids `eltoque_image_capture_retry_N`). `misfire_grace_time` 300 s en el cron y 120 s en los reintentos: con el default de APScheduler (1 s) un loop ocupado descartaria el reintento en silencio.
+- **taso-bot (PR #12, `5640222`, v0.18.4.0):** `IMAGE_CAPTURE_TIME = "08:15"`. Los avisos cuya hora es anterior a la captura (p. ej. 7:30, que se ajustan a 8:16) se aceptan hasta `CAPTURE_GRACE_MIN = 40` min despues (hasta ~8:56), para cubrir los reintentos de la API. Antes solo valia ±5 min (ticks de 8:15 y 8:20), asi que una imagen que llegara a las 8:30 dejaba a esos usuarios sin envio ese dia. Los avisos a hora fija posterior (9:00) conservan su ventana de 5 min.
+- **Verificacion:** 21 tests de captura en verde en taso-api (`uv run ...`, ver "Ojo"); bot: rojo/verde en worktree del VPS (la prueba de captura tardia falla con el codigo anterior), suite 422 pasan + 1 falla conocida (`test_imports_perezosos`, H-031, igual en `main`).
+- **Desplegado a medias:** `git pull` hecho en el VPS en ambos repos (api `3c6a651`, bot `5640222`). **FALTA reiniciar `taso-api` y luego `taso-bot`** (pide sudo): hasta entonces corren con el cron de 8:30 y sin reintentos. Reiniciar fuera de 8:10-9:00 Cuba. Tras reiniciar: `journalctl -u taso-api` debe mostrar "ElToque image capture job added (08:15 Cuba)".
+- **Sin verificar en vivo:** el primer ciclo real (manana 8:15 Cuba). Mirar el log de taso-api: `Captura diaria de ElToque OK (stale=..., intento=N)`.
+- **Limite conocido:** `_sent_today` del bot vive en memoria; si el bot se reinicia entre 8:16 y 8:56 un usuario con aviso temprano podria recibir la imagen dos veces.
+- **Descartado (medido):** liberar memoria del bot "descargando" modulos pesados tras usarlos no sirve, Python no devuelve la memoria (177,2 MB antes y despues). El recorte real seria reemplazar `pandas_ta` (H-032, ~70 MB), pendiente de aprobacion.
