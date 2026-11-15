@@ -54,7 +54,6 @@ Los errores siguen el mismo criterio:
 | GET | `/api/v1/tasas/cadeca` | `max_age_minutes` (5–1440, default 120) | Solo CADECA (oficial, compra/venta) |
 | GET | `/api/v1/tasas/bcc` | `max_age_minutes` (5–1440, default 120) | Solo Banco Central de Cuba (oficial) |
 | GET | `/api/v1/tasas/qvapay` | `max_age_minutes` (5-1440, default 120) | Solo QvaPay P2P: promedio, compra y venta por método de pago |
-| GET | `/api/v1/tasas/fuel` | `max_age_minutes` (1–1440, default 60) | Precios de combustible (mercado informal) |
 | GET | `/api/v1/tasas/cubanomic` | `max_age_minutes` (60–2880, default 1440) | USD / EUR / MLC de Cubanomic |
 | GET | `/api/v1/tasas/history` | `source`, `currency`, `days` (1–365) | Histórico crudo por fuente y moneda |
 | GET | `/api/v1/tasas/history/cubanomic` | `days` (7–730) | Histórico de Cubanomic agrupado por día (USD+EUR+MLC juntos) |
@@ -103,8 +102,8 @@ curl "http://tasalo.duckdns.org:8040/api/v1/tasas/latest"
 | Campo | Tipo | Descripción |
 |---|---|---|
 | `rate` | número | Valor principal a usar en la mayoría de los casos |
-| `buy` | número o `null` | Tasa de compra — solo poblada en CADECA y combustible |
-| `sell` | número o `null` | Tasa de venta — solo poblada en CADECA y combustible. En CADECA, `rate` == `sell` |
+| `buy` | número o `null` | Tasa de compra — solo poblada en CADECA |
+| `sell` | número o `null` | Tasa de venta — solo poblada en CADECA. En CADECA, `rate` == `sell` |
 | `change` | `"up"` / `"down"` / `"neutral"` | Dirección respecto al snapshot anterior — listo para pintar flechas 🔺🔻 sin calcularlo vos mismo |
 | `prev_rate` | número o `null` | Valor anterior, `null` si aún no hay snapshot previo |
 
