@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.scrapers.eltoque import fetch_eltoque
+from src.scrapers.cubanomic_live import fetch_cubanomic_live
 from src.scrapers.binance import fetch_binance
 from src.scrapers.bcc import fetch_bcc
 from src.scrapers.qvapay import fetch_qvapay
@@ -71,22 +72,40 @@ async def _fetch_safe(coro_func, timeout_secs: int, source_name: str) -> Any:
         return None
 
 
+async def _fetch_eltoque_with_fallback(max_retries: int = 3, timeout: float = 12.0) -> Any:
+    """
+    Intenta la API de ElToque hasta max_retries veces.
+    Si falla todas, usa Cubanomic live como respaldo.
+    """
+    for attempt in range(1, max_retries + 1):
+        try:
+            data = await fetch_eltoque(timeout=timeout)
+            if data and isinstance(data, dict) and data.get("tasas"):
+                logger.info(f"✅ ElToque OK (intento {attempt}/{max_retries})")
+                return data
+            logger.warning(f"ElToque respuesta vacía o sin tasas (intento {attempt}/{max_retries})")
+        except Exception as e:
+            logger.warning(f"ElToque fallo intento {attempt}/{max_retries}: {e}")
+        if attempt < max_retries:
+            await asyncio.sleep(1.2 * attempt)
+
+    logger.warning("⚠️ ElToque falló %s veces → usando Cubanomic live como respaldo", max_retries)
+    backup = await fetch_cubanomic_live(timeout=timeout)
+    if backup and backup.get("tasas"):
+        logger.info("✅ Cubanomic live OK (respaldo)")
+        return backup
+
+    logger.error("❌ Ni ElToque ni Cubanomic live respondieron")
+    return None
+
+
 async def fetch_all_sources() -> dict[str, Any]:
     """
-    Ejecuta los 4 scrapers en paralelo con timeouts individuales.
-
-    Timeouts:
-    - ElToque: 12s (API externa con auth)
-    - Binance: 10s (API pública rápida)
-    - BCC: 10s (web scraper oficial)
-    - QvaPay: 12s (10 consultas P2P en paralelo)
-
-    Returns:
-        dict con claves 'eltoque', 'binance', 'bcc', 'qvapay'
-        Cada valor es el resultado del scraper o None si falló
+    Ejecuta los scrapers en paralelo con timeouts individuales.
+    ElToque tiene 3 reintentos + fallback a Cubanomic live.
     """
     results = await asyncio.gather(
-        _fetch_safe(fetch_eltoque, 12, "ElToque"),
+        _fetch_safe(lambda: _fetch_eltoque_with_fallback(3, 12.0), 25, "ElToque+Cubanomic"),
         _fetch_safe(fetch_binance, 10, "Binance"),
         _fetch_safe(fetch_bcc, 10, "BCC"),
         _fetch_safe(fetch_qvapay, 12, "QvaPay"),
