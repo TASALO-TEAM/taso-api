@@ -43,3 +43,10 @@ Actualizado: 2026-11-11. Plan completo: `tasalo/docs/plans/2026-11-10-codigo-mue
 - **Sin verificar en vivo:** el primer ciclo real (manana 8:15 Cuba). Mirar el log de taso-api: `Captura diaria de ElToque OK (stale=..., intento=N)`.
 - **Limite conocido:** `_sent_today` del bot vive en memoria; si el bot se reinicia entre 8:16 y 8:56 un usuario con aviso temprano podria recibir la imagen dos veces.
 - **Descartado (medido):** liberar memoria del bot "descargando" modulos pesados tras usarlos no sirve, Python no devuelve la memoria (177,2 MB antes y despues). El recorte real seria reemplazar `pandas_ta` (H-032, ~70 MB), pendiente de aprobacion.
+
+## Sesion 2026-11-17 - ElToque hibrido y monedas agrupadas
+- Plan y tareas: `tasalo/docs/plans/2026-11-17-eltoque-hibrido-y-agrupado-monedas.md` y `taso-bot/task/registro` (BOARD API-T1..T8, D-026, `handoffs/eltoque-hibrido-2026-11-17.md`).
+- **Por que:** el token de la API de ElToque vencio el 2026-11-14. Cubanomic (`api.cubanomic.com/api/v1/x-rates`, con `Referer`) se usa como respaldo y como complemento: da ~20 monedas.
+- **Hecho en main/VPS (Grok, b347d7f):** 3 intentos a ElToque y Cubanomic solo si fallan.
+- **Hecho en local, sin commitear (rama feat/eltoque-hibrido-alertas):** mezcla API + Cubanomic, alertas al grupo soporte (`eltoque_health.py`), 26 tests. FALTA commit, PR y despliegue (pide el si de Ersus).
+- **Decidido por Ersus:** monedas de referencia visibles dentro de "Mostrar más", debajo de los grupos Principales, Cripto y Otras. Falta implementarlo en API, miniapp, Android y extensiones.
