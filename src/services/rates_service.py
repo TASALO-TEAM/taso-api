@@ -12,7 +12,7 @@ from sqlalchemy import func, select, union_all
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.scrapers.eltoque import fetch_eltoque
+from src.scrapers.eltoque import ElToqueError, fetch_eltoque_strict
 from src.scrapers.cubanomic_live import fetch_cubanomic_live
 from src.scrapers.binance import fetch_binance
 from src.scrapers.bcc import fetch_bcc
@@ -72,40 +72,131 @@ async def _fetch_safe(coro_func, timeout_secs: int, source_name: str) -> Any:
         return None
 
 
-async def _fetch_eltoque_with_fallback(max_retries: int = 3, timeout: float = 12.0) -> Any:
+# Segundos entre reintentos de la API de ElToque (1s, 2s...). Los tests lo ponen en 0.
+_RETRY_BACKOFF = 1.0
+
+
+async def _eltoque_api_with_retries(
+    max_attempts: int = 3, timeout: float = 8.0
+) -> tuple[dict | None, str | None]:
+    """Consulta la API oficial hasta max_attempts veces.
+
+    Devuelve (datos, None) si responde, o (None, motivo_del_último_fallo).
+    Los errores deterministas (token vencido/inválido) no se reintentan.
     """
-    Intenta la API de ElToque hasta max_retries veces.
-    Si falla todas, usa Cubanomic live como respaldo.
-    """
-    for attempt in range(1, max_retries + 1):
+    reason: str | None = None
+    for attempt in range(1, max_attempts + 1):
         try:
-            data = await fetch_eltoque(timeout=timeout)
-            if data and isinstance(data, dict) and data.get("tasas"):
-                logger.info(f"✅ ElToque OK (intento {attempt}/{max_retries})")
-                return data
-            logger.warning(f"ElToque respuesta vacía o sin tasas (intento {attempt}/{max_retries})")
-        except Exception as e:
-            logger.warning(f"ElToque fallo intento {attempt}/{max_retries}: {e}")
-        if attempt < max_retries:
-            await asyncio.sleep(1.2 * attempt)
+            data = await fetch_eltoque_strict(timeout=timeout)
+            logger.info(f"✅ ElToque API OK (intento {attempt}/{max_attempts})")
+            return data, None
+        except ElToqueError as e:
+            reason = e.reason
+            logger.warning(f"⚠️ ElToque API intento {attempt}/{max_attempts}: {e.reason}")
+            if not e.retryable:
+                break
+        except Exception as e:  # defensivo: no debe tumbar el ciclo
+            reason = f"{type(e).__name__}: {e}"
+            logger.warning(f"⚠️ ElToque API intento {attempt}/{max_attempts}: {reason}")
+        if attempt < max_attempts:
+            await asyncio.sleep(_RETRY_BACKOFF * attempt)
+    return None, reason
 
-    logger.warning("⚠️ ElToque falló %s veces → usando Cubanomic live como respaldo", max_retries)
-    backup = await fetch_cubanomic_live(timeout=timeout)
-    if backup and backup.get("tasas"):
-        logger.info("✅ Cubanomic live OK (respaldo)")
-        return backup
 
-    logger.error("❌ Ni ElToque ni Cubanomic live respondieron")
-    return None
+def merge_eltoque_sources(api: dict | None, cubanomic: dict | None) -> dict | None:
+    """Combina la API oficial (prioridad) con Cubanomic (completa lo que falte).
+
+    - Si la API respondió: sus monedas mandan; Cubanomic solo añade las que la API no trae.
+    - Si la API falló: todo sale de Cubanomic.
+    - Si fallaron las dos: None.
+
+    Las claves se normalizan (ECU->EUR, USDT_TRC20->USDT) ANTES de mezclar, para que la
+    misma moneda de las dos fuentes no quede duplicada.
+    Devuelve el formato de ElToque ({"tasas": {...}}) más `origin` (moneda -> "api" |
+    "cubanomic"), `mode` ("api" | "hybrid" | "cubanomic") y `meta` (ofertas por moneda
+    de Cubanomic).
+    """
+    tasas: dict[str, float] = {}
+    origin: dict[str, str] = {}
+
+    if api:
+        for code, value in (api.get("tasas") or {}).items():
+            try:
+                tasas[CURRENCY_MAP.get(code, code)] = float(value)
+            except (TypeError, ValueError):
+                continue
+        origin = {code: "api" for code in tasas}
+
+    if cubanomic:
+        for code, value in (cubanomic.get("tasas") or {}).items():
+            if code not in tasas:
+                tasas[code] = float(value)
+                origin[code] = "cubanomic"
+
+    if not tasas:
+        return None
+
+    from_cub = sum(1 for o in origin.values() if o == "cubanomic")
+    if not api:
+        mode = "cubanomic"
+    else:
+        mode = "hybrid" if from_cub else "api"
+
+    base = api or cubanomic or {}
+    return {
+        **{k: v for k, v in base.items() if k not in ("tasas", "meta", "source")},
+        "tasas": tasas,
+        "origin": origin,
+        "mode": mode,
+        "meta": (cubanomic or {}).get("meta", {}),
+    }
+
+
+async def _fetch_eltoque_merged(timeout: float = 8.0) -> dict | None:
+    """ElToque = API oficial (3 intentos) + Cubanomic en paralelo, mezclados.
+
+    Cubanomic se consulta siempre porque trae monedas que la API no tiene; si la API cae,
+    ya está listo y no hay que esperar a un segundo viaje. Informa el estado al grupo de
+    soporte (solo en cambios).
+    """
+    from src.services import eltoque_health
+
+    (api, api_reason), cubanomic = await asyncio.gather(
+        _eltoque_api_with_retries(3, timeout),
+        fetch_cubanomic_live(timeout=10.0),
+    )
+
+    merged = merge_eltoque_sources(api, cubanomic)
+
+    if api:
+        health = "ok"
+    elif merged:
+        health = "degraded"
+    else:
+        health = "down"
+        logger.error("❌ Ni la API de ElToque ni Cubanomic respondieron")
+
+    if merged:
+        extras = sum(1 for o in merged["origin"].values() if o == "cubanomic")
+        logger.info(
+            f"ElToque: modo={merged['mode']} monedas={len(merged['tasas'])} "
+            f"(de Cubanomic: {extras})"
+        )
+    await eltoque_health.report(health, api_reason, extras=0 if not merged else extras)
+    return merged
 
 
 async def fetch_all_sources() -> dict[str, Any]:
     """
     Ejecuta los scrapers en paralelo con timeouts individuales.
-    ElToque tiene 3 reintentos + fallback a Cubanomic live.
+
+    ElToque = API oficial (hasta 3 intentos, ~27s en el peor caso) mezclada con Cubanomic:
+    la API manda y Cubanomic completa las monedas que le faltan; si la API cae, todo sale
+    de Cubanomic. El timeout externo (40s) debe superar siempre ese peor caso, o el
+    respaldo se cancelaría antes de poder usarse.
     """
     results = await asyncio.gather(
-        _fetch_safe(lambda: _fetch_eltoque_with_fallback(3, 12.0), 25, "ElToque+Cubanomic"),
+        _fetch_safe(_fetch_eltoque_merged, 40, "ElToque"),
         _fetch_safe(fetch_binance, 10, "Binance"),
         _fetch_safe(fetch_bcc, 10, "BCC"),
         _fetch_safe(fetch_qvapay, 12, "QvaPay"),

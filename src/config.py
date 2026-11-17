@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # ElToque API
     eltoque_api_key: str = ""
     eltoque_api_url: str = "https://tasas.eltoque.com/v1/trmi"
+
+    # Cubanomic live (respaldo/complemento de ElToque). Es el token público que el propio
+    # iframe de Cubanomic incluye en su JS; si ellos lo rotan, basta con poner el nuevo en .env.
+    cubanomic_token: str = "hRaCcY78gXC3k9WRv01pR7V1fgSxlg"
     
     # Security
     admin_api_key: str = "changeme"
