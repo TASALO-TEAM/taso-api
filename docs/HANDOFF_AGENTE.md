@@ -48,5 +48,6 @@ Actualizado: 2026-11-11. Plan completo: `tasalo/docs/plans/2026-11-10-codigo-mue
 - Plan y tareas: `tasalo/docs/plans/2026-11-17-eltoque-hibrido-y-agrupado-monedas.md` y `taso-bot/task/registro` (BOARD API-T1..T8, D-026, `handoffs/eltoque-hibrido-2026-11-17.md`).
 - **Por que:** el token de la API de ElToque vencio el 2026-11-14. Cubanomic (`api.cubanomic.com/api/v1/x-rates`, con `Referer`) se usa como respaldo y como complemento: da ~20 monedas.
 - **Hecho en main/VPS (Grok, b347d7f):** 3 intentos a ElToque y Cubanomic solo si fallan.
-- **Hecho en local, sin commitear (rama feat/eltoque-hibrido-alertas):** mezcla API + Cubanomic, alertas al grupo soporte (`eltoque_health.py`), 26 tests. FALTA commit, PR y despliegue (pide el si de Ersus).
-- **Decidido por Ersus:** monedas de referencia visibles dentro de "Mostrar más", debajo de los grupos Principales, Cripto y Otras. Falta implementarlo en API, miniapp, Android y extensiones.
+- **Hecho y desplegado 2026-11-17 (v0.15.0.0):** mezcla API + Cubanomic y alertas al grupo soporte (PR #13, 26 tests); `UDS` de Cubanomic se expone como `ZELLE` (PR #14). El bot (taso-bot PR #53, v0.38.0.0) muestra lista fija EUR, USD, ZELLE, MLC, CLA + BTC, TRX, USDT, BNB.
+- **Decidido por Ersus:** monedas de referencia visibles dentro de "Mostrar más", debajo de los grupos Principales, Cripto y Otras; `UDS` = Zelle, `CLA` = tarjeta Clásica; Zelle siempre tras USD en apps, miniapp y extensiones. FALTA: `offers`/`group`/`tier`/`name` en la API y los clientes (ver plan, tareas API-T2..T8).
+- Token de ElToque vencido (2026-11-14): la API opera en modo `cubanomic` hasta poner el nuevo en `ELTOQUE_API_KEY` del `.env` del VPS.
