@@ -27,6 +27,23 @@ class QvaPayRate(CurrencyRate):
     )
 
 
+class ElToqueRate(CurrencyRate):
+    """Tasa de ElToque con datos para que los clientes la agrupen sin conocer cada moneda."""
+
+    name: str | None = Field(None, description="Nombre legible (None si la moneda no esta en el catalogo)")
+    group: Literal["main", "crypto", "other"] = Field(
+        "other", description="Grupo de pantalla: main (principales), crypto u other"
+    )
+    tier: Literal["market", "reference"] = Field(
+        "market",
+        description="market = tasa de mercado; reference = valor fijo sin ofertas reales (mostrar en 'Mostrar mas')",
+    )
+    offers: int | None = Field(
+        None, description="Ofertas reales detras de la tasa (None si viene de la API oficial de ElToque)"
+    )
+    order: int = Field(999, description="Posicion dentro del grupo (ascendente)")
+
+
 class SourceRatesResponse(BaseModel):
     """Respuesta para tasas de una fuente específica."""
 
@@ -41,10 +58,18 @@ class QvaPayRatesResponse(SourceRatesResponse):
     rates: dict[str, QvaPayRate] = Field(..., description="Tasas por método de pago")
 
 
+class ElToqueRatesResponse(SourceRatesResponse):
+    """Respuesta de /tasas/eltoque: igual que SourceRatesResponse pero con name/group/tier/offers/order."""
+
+    rates: dict[str, ElToqueRate] = Field(..., description="Tasas por moneda, ya ordenadas por grupo")
+
+
 class LatestRatesData(BaseModel):
     """Datos combinados de todas las fuentes."""
 
-    eltoque: dict[str, CurrencyRate] = Field(default_factory=dict, description="Tasas de ElToque")
+    eltoque: dict[str, ElToqueRate] = Field(
+        default_factory=dict, description="Tasas de ElToque, agrupadas (name/group/tier/offers/order)"
+    )
     cadeca: dict[str, CurrencyRate] = Field(default_factory=dict, description="Obsoleto: siempre vacío; se mantiene para clientes antiguos")
     bcc: dict[str, CurrencyRate] = Field(default_factory=dict, description="Tasas de BCC")
     binance: dict[str, CurrencyRate] = Field(default_factory=dict, description="Tasas de Binance")

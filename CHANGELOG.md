@@ -8,6 +8,8 @@ y este proyecto se adhiere a [Versionado Semántico](https://semver.org/lang/es/
 ## [Unreleased]
 
 ### Added
+- **ElToque agrupado para los clientes**: `/tasas/eltoque` y `data.eltoque` de `/tasas/latest` ahora traen `name`, `group` (main/crypto/other), `tier` (market/reference), `offers` y `order` por moneda, ya ordenadas (EUR, USD, ZELLE, MLC, CLA / cripto / otras). Campos aditivos: los clientes viejos los ignoran. Catalogo en `src/services/eltoque_catalog.py`.
+- **Columna `rate_snapshots.offers`** (migracion `4k_add_rate_snapshot_offers`, aditiva y nullable): ofertas reales detras de una tasa de Cubanomic; `NULL` = API oficial.
 - **QvaPay como fuente de tasas**: nuevo scraper `src/scrapers/qvapay.py` (10 métodos de pago, compra y venta), `GET /api/v1/tasas/qvapay`, clave `qvapay` en `/tasas/latest` y `source=qvapay` en `/tasas/history`. `rate` es el promedio compra/venta.
 - **QvaPay: nuevo método `CUPCASH`** (CUP en efectivo, categoría Cash de QvaPay).
 

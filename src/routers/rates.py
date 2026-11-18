@@ -11,11 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database import get_db
 from src.redis_client import RedisClient
 from src.services import history_service, rates_service
+from src.services.eltoque_catalog import build_eltoque_rates
 from src.scrapers.qvapay import qvapay_meta
 from src.schemas.rates import (
     QvaPayRate,
     QvaPayRatesResponse,
     CurrencyRate,
+    ElToqueRatesResponse,
     LatestRatesResponse,
     LatestRatesData,
     SourceRatesResponse,
@@ -124,6 +126,11 @@ async def get_latest_rates(
         fetched_at = _latest_fetched_at(rates)
         if fetched_at is not None:
             sources_updated_at[source] = fetched_at
+        if source == 'eltoque':
+            # ElToque: name/group/tier/offers/order para que los clientes agrupen sin conocer cada moneda.
+            eltoque_rates = build_eltoque_rates(rates)
+            continue
+
         formatted_rates = {}
         for currency, rate_info in rates.items():
             if source == 'qvapay':
@@ -145,9 +152,7 @@ async def get_latest_rates(
                     prev_rate=rate_info.get('prev_rate')
                 )
 
-        if source == 'eltoque':
-            eltoque_rates = formatted_rates
-        elif source == 'bcc':
+        if source == 'bcc':
             bcc_rates = formatted_rates
         elif source == 'binance':
             binance_rates = formatted_rates
@@ -171,7 +176,7 @@ async def get_latest_rates(
     )
 
 
-@router.get("/eltoque", response_model=SourceRatesResponse)
+@router.get("/eltoque", response_model=ElToqueRatesResponse)
 async def get_eltoque_rates(
     request: Request,
     response: Response,
@@ -182,7 +187,7 @@ async def get_eltoque_rates(
         le=1440,
         description="Máxima edad de datos en minutos (fallback a histórico)"
     )
-) -> SourceRatesResponse:
+) -> ElToqueRatesResponse:
     """
     Obtiene las últimas tasas de ElToque (mercado informal).
     
@@ -201,17 +206,9 @@ async def get_eltoque_rates(
     if not_modified is not None:
         return not_modified
 
-    formatted_rates = {}
-    for currency, rate_info in rates.items():
-        formatted_rates[currency] = CurrencyRate(
-            rate=rate_info.get('rate', 0) or 0,
-            change=rate_info.get('change', 'neutral'),
-            prev_rate=rate_info.get('prev_rate')
-        )
-
-    return SourceRatesResponse(
+    return ElToqueRatesResponse(
         source='eltoque',
-        rates=formatted_rates,
+        rates=build_eltoque_rates(rates),
         updated_at=updated_at or datetime.now(timezone.utc)
     )
 

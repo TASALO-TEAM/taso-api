@@ -218,15 +218,21 @@ def _normalize_eltoque_data(data: dict) -> list[dict]:
     Legacy: estructura de legacy/tasa.py -> tasas_actuales
     """
     tasas = data.get("tasas", {})
+    origin = data.get("origin") or {}
+    meta = data.get("meta") or {}
     result = []
 
     for currency, rate in tasas.items():
         # ElToque usa tasa única (venta)
+        code = CURRENCY_MAP.get(currency, currency)
+        # offers solo para monedas que salieron de Cubanomic; la API oficial queda en None (mercado)
+        offers = (meta.get(code) or {}).get("messages") if origin.get(code) == "cubanomic" else None
         result.append(
             {
-                "currency": CURRENCY_MAP.get(currency, currency),
+                "currency": code,
                 "buy_rate": None,  # ElToque no tiene compra
                 "sell_rate": float(rate),
+                "offers": offers,
             }
         )
 
@@ -335,6 +341,7 @@ async def save_snapshot(session: AsyncSession, source: str, data: Any) -> None:
             currency=item["currency"],
             buy_rate=item["buy_rate"],
             sell_rate=item["sell_rate"],
+            offers=item.get("offers"),
             fetched_at=now,
         )
         snapshots.append(snapshot)
@@ -639,6 +646,8 @@ async def _compute_latest_rates(
                     "fetched_at": snap.fetched_at.isoformat(),
                     "data_age_minutes": age_minutes,
                 }
+                if source == "eltoque":
+                    formatted[snap.currency]["offers"] = snap.offers
 
             result[source] = formatted
             if not formatted:
@@ -790,6 +799,8 @@ async def _get_source_rates(
                 "change": calculate_change(rate, prev_rate),
                 "prev_rate": prev_rate,
             }
+            if source == "eltoque":
+                formatted[snap.currency]["offers"] = snap.offers
 
         elif source == "qvapay":
             if snap.buy_rate is None and snap.sell_rate is None:

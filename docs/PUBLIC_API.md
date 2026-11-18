@@ -117,12 +117,26 @@ Igual formato, sin el wrapper de las 4 fuentes:
 {
   "source": "eltoque",
   "rates": {
-    "USD": { "rate": 365.0, "buy": null, "sell": null, "change": "up", "prev_rate": 360.0 },
-    "EUR": { "rate": 398.0, "buy": null, "sell": null, "change": "neutral", "prev_rate": null }
+    "EUR":   { "rate": 1000.0, "change": "neutral", "prev_rate": null, "name": "Euro", "group": "main", "tier": "market", "offers": 60, "order": 1 },
+    "USD":   { "rate": 930.0,  "change": "up", "prev_rate": 925.0, "name": "Dólar", "group": "main", "tier": "market", "offers": 390, "order": 2 },
+    "ZELLE": { "rate": 915.0,  "change": "neutral", "prev_rate": null, "name": "Zelle", "group": "main", "tier": "market", "offers": 3, "order": 3 },
+    "BNB":   { "rate": 450.0,  "change": "neutral", "prev_rate": null, "name": "BNB", "group": "crypto", "tier": "reference", "offers": 0, "order": 4 }
   },
   "updated_at": "2026-07-07T14:00:00Z"
 }
 ```
+
+**Campos de ElToque para agrupar sin conocer cada moneda** (también en `data.eltoque` de `/latest`). Las claves ya vienen **ordenadas** (grupo, luego `order`), pero el orden de un objeto JSON no está garantizado en todos los clientes: ordená por `group` (`main` → `crypto` → `other`) y luego por `order`.
+
+| Campo | Valores | Significado |
+|---|---|---|
+| `name` | texto o `null` | Nombre legible. `null` si la moneda no está en el catálogo: mostrá el código |
+| `group` | `main`, `crypto`, `other` | Sección de pantalla (Principales, Cripto, Otras) |
+| `tier` | `market`, `reference` | `reference` = valor fijo sin ofertas reales; mostralo aparte ("Mostrar más") y no como tasa de mercado |
+| `offers` | entero o `null` | Ofertas reales detrás de la tasa (`null` = viene de la API oficial de ElToque, se trata como mercado) |
+| `order` | entero | Posición dentro del grupo (999 = sin posición, ordená por código) |
+
+Son campos **aditivos**: los clientes que no los lean siguen funcionando igual. Cuando la API oficial de ElToque no responde, las tasas salen de Cubanomic y traen `offers`.
 
 ### `GET /api/v1/tasas/qvapay`
 
