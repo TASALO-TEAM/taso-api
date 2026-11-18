@@ -31,6 +31,7 @@ from src.routers import tickets as tickets_router
 from src.routers import tspl as tspl_router
 from src.logging_config import setup_logging
 from src.services.alert_notifier import notify as notify_support_group
+from src.version import VERSION
 
 settings = get_settings()
 
@@ -40,7 +41,7 @@ setup_logging(level=logging.INFO)
 
 logger = logging.getLogger(__name__)
 
-API_VERSION = "1.6.0"
+API_VERSION = VERSION
 
 
 def _get_git_build_info() -> dict[str, str]:
@@ -209,7 +210,7 @@ async def lifespan(app: FastAPI):
     app.state.scheduler = scheduler
 
     # Aviso de arranque al grupo de soporte (mismo patrón que taso-gcg/taso-bot)
-    await notify_support_group(f"🚀 taso-api v{API_VERSION} en línea.")
+    await notify_support_group(f"🚀 taso-api v{API_VERSION} ({_GIT_BUILD_INFO['commit']}) en línea.")
 
     yield
 
