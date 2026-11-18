@@ -23,6 +23,7 @@ REFERER = "https://iframe.cubanomic.com/"
 CURRENCY_MAP = {
     "ECU": "EUR",
     "USDT_TRC20": "USDT",
+    "UDS": "ZELLE",  # Cubanomic publica Zelle (USD por transferencia en EE.UU.) como UDS
 }
 
 # CUP es la moneda base: Cubanomic la incluye en `statistics` pero no es una tasa de cambio.
