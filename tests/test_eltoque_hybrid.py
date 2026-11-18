@@ -282,3 +282,12 @@ def test_cubanomic_normaliza():
 def test_cubanomic_sin_datos_devuelve_none():
     assert cubanomic_live._normalize_to_eltoque_format({"statistics": {}}) is None
     assert cubanomic_live._normalize_to_eltoque_format({}) is None
+
+
+def test_cubanomic_uds_es_zelle():
+    # Cubanomic publica Zelle con el codigo UDS; el resto del sistema lo ve como ZELLE
+    out = cubanomic_live._normalize_to_eltoque_format(
+        {"statistics": {"UDS": _stat(915, 12), "USD": _stat(930, 389)}}
+    )
+    assert out["tasas"]["ZELLE"] == 915 and "UDS" not in out["tasas"]
+    assert out["meta"]["ZELLE"]["messages"] == 12
