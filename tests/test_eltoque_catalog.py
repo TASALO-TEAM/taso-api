@@ -37,14 +37,24 @@ def test_moneda_desconocida_no_rompe():
     assert meta["offers"] == 2
 
 
-def test_normalize_guarda_offers_solo_de_monedas_de_cubanomic():
+def test_normalize_completa_offers_de_cubanomic_sin_pisar_la_tasa_de_la_api():
     data = {
-        "tasas": {"USD": 930, "CAD": 600, "BNB": 450},
-        "origin": {"USD": "api", "CAD": "cubanomic", "BNB": "cubanomic"},
+        "tasas": {"USD": 930, "CAD": 600, "BNB": 450, "TRX": 407.03},
+        "origin": {"USD": "api", "CAD": "cubanomic", "BNB": "cubanomic", "TRX": "api"},
         "meta": {"USD": {"messages": 389}, "CAD": {"messages": 6}, "BNB": {"messages": 0}},
     }
-    offers = {r["currency"]: r["offers"] for r in _normalize_eltoque_data(data)}
-    assert offers == {"USD": None, "CAD": 6, "BNB": 0}
+    rows = {r["currency"]: r for r in _normalize_eltoque_data(data)}
+    # offers viene de Cubanomic aunque la tasa sea de la API; sin dato en meta queda None
+    assert {c: r["offers"] for c, r in rows.items()} == {"USD": 389, "CAD": 6, "BNB": 0, "TRX": None}
+    # la tasa NO se toca: sigue siendo la de la fuente que la aporto
+    assert {c: r["sell_rate"] for c, r in rows.items()} == {"USD": 930.0, "CAD": 600.0, "BNB": 450.0, "TRX": 407.03}
+
+
+def test_normalize_normaliza_clave_de_la_api_antes_de_buscar_offers():
+    # La API manda ECU; Cubanomic publica EUR. Las ofertas de EUR deben llegar a la tasa de ECU.
+    data = {"tasas": {"EUR": 1007.5}, "origin": {"EUR": "api"}, "meta": {"EUR": {"messages": 71}}}
+    (row,) = _normalize_eltoque_data(data)
+    assert (row["currency"], row["sell_rate"], row["offers"]) == ("EUR", 1007.5, 71)
 
 
 def test_normalize_sin_origin_ni_meta_deja_offers_en_none():

@@ -218,15 +218,15 @@ def _normalize_eltoque_data(data: dict) -> list[dict]:
     Legacy: estructura de legacy/tasa.py -> tasas_actuales
     """
     tasas = data.get("tasas", {})
-    origin = data.get("origin") or {}
     meta = data.get("meta") or {}
     result = []
 
     for currency, rate in tasas.items():
         # ElToque usa tasa única (venta)
         code = CURRENCY_MAP.get(currency, currency)
-        # offers solo para monedas que salieron de Cubanomic; la API oficial queda en None (mercado)
-        offers = (meta.get(code) or {}).get("messages") if origin.get(code) == "cubanomic" else None
+        # offers viene siempre de Cubanomic (meta), aunque la tasa sea de la API oficial: solo
+        # completa la tasa con las ofertas reales detras, nunca la reemplaza. Sin dato -> None.
+        offers = (meta.get(code) or {}).get("messages")
         result.append(
             {
                 "currency": code,
