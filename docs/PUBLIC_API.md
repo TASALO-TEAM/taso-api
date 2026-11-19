@@ -1,6 +1,6 @@
 # TASALO API — Documentación para desarrolladores
 
-API REST pública que agrega tasas de cambio de Cuba en tiempo (casi) real: **ElToque** (mercado informal), **CADECA** y **BCC** (oficiales), **QvaPay** (P2P por método de pago), **Binance** (cripto P2P) y **Cubanomic** (multi-fuente). Se actualiza automáticamente cada 15 minutos.
+API REST pública que agrega tasas de cambio de Cuba en tiempo (casi) real: **ElToque** (mercado informal), **BCC** (oficial), **QvaPay** (P2P por método de pago), **Binance** (cripto P2P) y **Cubanomic** (multi-fuente). Se actualiza automáticamente cada 15 minutos.
 
 Esta guía es para cualquiera que quiera **consumir los datos ya desplegados**, sin necesidad de instalar ni mantener su propia instancia de la API: widgets de escritorio, extensiones de navegador, bots de Telegram, apps de finanzas personales, dashboards, etc.
 
@@ -22,7 +22,7 @@ http://tasalo.duckdns.org:8040/api/v1/tasas/latest
 
 - **No hace falta API key** para leer datos. Los endpoints de tasas, histórico, anuncios e imágenes son de lectura pública.
 - **CORS abierto**: se puede llamar directamente desde JavaScript en el navegador, no solo desde un backend.
-- **Diseño resiliente**: si no hay datos frescos en el momento de la consulta, la API devuelve automáticamente el último dato histórico disponible en vez de fallar. En la práctica esto significa que casi nunca vas a recibir un error solo porque una fuente externa (ElToque, CADECA, etc.) esté caída momentáneamente.
+- **Diseño resiliente**: si no hay datos frescos en el momento de la consulta, la API devuelve automáticamente el último dato histórico disponible en vez de fallar. En la práctica esto significa que casi nunca vas a recibir un error solo porque una fuente externa (ElToque, BCC, etc.) esté caída momentáneamente.
 - **Formato de respuesta consistente** en toda la API:
 
 ```json
@@ -49,9 +49,8 @@ Los errores siguen el mismo criterio:
 | Método | Endpoint | Parámetros | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/health` | — | Estado de la API y de la base de datos |
-| GET | `/api/v1/tasas/latest` | `max_age_minutes` (5–1440, default 120) | Todas las fuentes combinadas: ElToque, CADECA, BCC, QvaPay, Binance |
+| GET | `/api/v1/tasas/latest` | `max_age_minutes` (5–1440, default 120) | Todas las fuentes combinadas: ElToque, BCC, QvaPay, Binance |
 | GET | `/api/v1/tasas/eltoque` | `max_age_minutes` (5–1440, default 120) | Solo ElToque (mercado informal) |
-| GET | `/api/v1/tasas/cadeca` | `max_age_minutes` (5–1440, default 120) | Solo CADECA (oficial, compra/venta) |
 | GET | `/api/v1/tasas/bcc` | `max_age_minutes` (5–1440, default 120) | Solo Banco Central de Cuba (oficial) |
 | GET | `/api/v1/tasas/qvapay` | `max_age_minutes` (5-1440, default 120) | Solo QvaPay P2P: promedio, compra y venta por método de pago |
 | GET | `/api/v1/tasas/cubanomic` | `max_age_minutes` (60–2880, default 1440) | USD / EUR / MLC de Cubanomic |
@@ -75,9 +74,6 @@ curl "http://tasalo.duckdns.org:8040/api/v1/tasas/latest"
       "USD": { "rate": 365.0, "buy": null, "sell": null, "change": "up", "prev_rate": 360.0 },
       "EUR": { "rate": 398.0, "buy": null, "sell": null, "change": "neutral", "prev_rate": null }
     },
-    "cadeca": {
-      "USD": { "rate": 120.0, "buy": 115.0, "sell": 120.0, "change": "neutral", "prev_rate": null }
-    },
     "bcc": {
       "USD": { "rate": 120.0, "buy": null, "sell": null, "change": "neutral", "prev_rate": null }
     },
@@ -90,7 +86,6 @@ curl "http://tasalo.duckdns.org:8040/api/v1/tasas/latest"
   "updated_at": "2026-07-07T14:00:00Z",
   "sources_updated_at": {
     "eltoque": "2026-07-07T13:55:02Z",
-    "cadeca": "2026-07-07T13:55:03Z",
     "bcc": "2026-07-07T13:55:03Z",
     "qvapay": "2026-07-07T13:55:04Z"
   }
@@ -102,8 +97,8 @@ curl "http://tasalo.duckdns.org:8040/api/v1/tasas/latest"
 | Campo | Tipo | Descripción |
 |---|---|---|
 | `rate` | número | Valor principal a usar en la mayoría de los casos |
-| `buy` | número o `null` | Tasa de compra — solo poblada en CADECA |
-| `sell` | número o `null` | Tasa de venta — solo poblada en CADECA. En CADECA, `rate` == `sell` |
+| `buy` | número o `null` | Tasa de compra — solo poblada en QvaPay |
+| `sell` | número o `null` | Tasa de venta — solo poblada en QvaPay |
 | `change` | `"up"` / `"down"` / `"neutral"` | Dirección respecto al snapshot anterior — listo para pintar flechas 🔺🔻 sin calcularlo vos mismo |
 | `prev_rate` | número o `null` | Valor anterior, `null` si aún no hay snapshot previo |
 
@@ -140,7 +135,7 @@ Son campos **aditivos**: los clientes que no los lean siguen funcionando igual. 
 
 ### `GET /api/v1/tasas/qvapay`
 
-Tasas P2P de QvaPay por método de pago (`CUP`, `MLC`, `TROPIPAY`, `ETECSA`, `ZELLE`, `CLASICA`, `BOLSATM`, `BANDECPREPAGO`, `SBERBANK`, `CUPCASH`). Mismo formato que `/cadeca`: `rate` es el **promedio** `(compra + venta) / 2`, y `buy` / `sell` son los promedios de compra y venta (si falta un lado, `rate` es el que haya). El `change` se calcula sobre el promedio.
+Tasas P2P de QvaPay por método de pago (`CUP`, `MLC`, `TROPIPAY`, `ETECSA`, `ZELLE`, `CLASICA`, `BOLSATM`, `BANDECPREPAGO`, `SBERBANK`, `CUPCASH`). `rate` es el **promedio** `(compra + venta) / 2`, y `buy` / `sell` son los promedios de compra y venta (si falta un lado, `rate` es el que haya). El `change` se calcula sobre el promedio.
 
 > **Unidad:** cada valor es *cuánto de ese método por 1 USD de QvaPay*. No todos son CUP por unidad (ej. `MLC` ~1.45, `ZELLE` ~1.02). Los métodos sin operaciones recientes (`SBERBANK` casi siempre) no aparecen.
 

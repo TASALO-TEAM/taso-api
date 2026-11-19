@@ -70,7 +70,6 @@ class LatestRatesData(BaseModel):
     eltoque: dict[str, ElToqueRate] = Field(
         default_factory=dict, description="Tasas de ElToque, agrupadas (name/group/tier/offers/order)"
     )
-    cadeca: dict[str, CurrencyRate] = Field(default_factory=dict, description="Obsoleto: siempre vacío; se mantiene para clientes antiguos")
     bcc: dict[str, CurrencyRate] = Field(default_factory=dict, description="Tasas de BCC")
     binance: dict[str, CurrencyRate] = Field(default_factory=dict, description="Tasas de Binance")
     qvapay: dict[str, QvaPayRate] = Field(

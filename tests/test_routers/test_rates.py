@@ -96,7 +96,7 @@ def test_get_latest_rates_structure(client, sample_data):
     
     # Verificar que todas las fuentes están presentes
     assert "eltoque" in data["data"]
-    assert data["data"]["cadeca"] == {}  # obsoleta; solo para clientes antiguos
+    assert "cadeca" not in data["data"]  # fuente retirada
     assert "bcc" in data["data"]
     assert "binance" in data["data"]
 
