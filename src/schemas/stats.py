@@ -145,6 +145,34 @@ class ReachabilityResponse(BaseModel):
     found: bool = Field(..., description="Si el usuario existia en bot_users")
 
 
+class PrivacyRequest(BaseModel):
+    """Request de POST /users/privacy: el usuario pide borrar sus datos."""
+
+    user_id: int = Field(..., gt=0, description="ID del usuario (Telegram)")
+
+
+class PrivacyResponse(BaseModel):
+    """Respuesta de POST /users/privacy."""
+
+    ok: bool = Field(True, description="Estado de la respuesta")
+    deleted_rows: int = Field(..., description="Filas borradas (bot_users, stats, alertas y suscripciones)")
+    tickets_anonymized: int = Field(..., description="Tickets anonimizados")
+
+
+class MuteRequest(BaseModel):
+    """Request de POST /users/mute: el usuario activa (True) o quita (False) el silencio."""
+
+    user_id: int = Field(..., gt=0, description="ID del usuario (Telegram)")
+    muted: bool = Field(..., description="True = no recibir difusiones masivas")
+
+
+class MuteResponse(BaseModel):
+    """Respuesta de POST /users/mute. `found` es False si el usuario no esta en bot_users."""
+
+    ok: bool = Field(True, description="Estado de la respuesta")
+    found: bool = Field(..., description="Si el usuario existia en bot_users")
+
+
 class BroadcastLogRequest(BaseModel):
     """Request de POST /broadcasts: una difusion de /ms ya terminada. Sin texto del mensaje."""
 

@@ -14,6 +14,10 @@ from src.schemas.stats import (
     BroadcastLogListResponse,
     BroadcastLogRequest,
     BroadcastLogResponse,
+    MuteRequest,
+    MuteResponse,
+    PrivacyRequest,
+    PrivacyResponse,
     ReachabilityRequest,
     ReachabilityResponse,
     SeenUserRequest,
@@ -102,6 +106,38 @@ async def set_user_reachability(
         db, user_id=request.user_id, reachable=request.reachable
     )
     return ReachabilityResponse(ok=True, found=found)
+
+
+@router.post("/users/privacy", response_model=PrivacyResponse)
+async def erase_user_data(
+    request: PrivacyRequest,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(require_auth),
+) -> PrivacyResponse:
+    """
+    Borra los datos de un usuario y anonimiza sus tickets (/privacidad).
+
+    Endpoint admin-only (X-API-Key). Lo llama taso-bot tras la confirmacion del
+    usuario (taso-bot#72, Fase 5). Irreversible; las copias de seguridad no se tocan.
+    """
+    result = await stats_service.erase_user_data(db, user_id=request.user_id)
+    return PrivacyResponse(ok=True, **result)
+
+
+@router.post("/users/mute", response_model=MuteResponse)
+async def set_user_muted(
+    request: MuteRequest,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(require_auth),
+) -> MuteResponse:
+    """
+    Activa o quita el silencio de un usuario (/silencio): no recibe difusiones masivas.
+
+    Endpoint admin-only (X-API-Key) (taso-bot#72, Fase 5). Si el usuario no esta en
+    bot_users no se crea: responde found=false.
+    """
+    found = await stats_service.set_user_muted(db, user_id=request.user_id, muted=request.muted)
+    return MuteResponse(ok=True, found=found)
 
 
 @router.post("/broadcasts", response_model=BroadcastLogResponse)
