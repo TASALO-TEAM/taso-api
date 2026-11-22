@@ -1,7 +1,7 @@
 """Modelos para estadísticas del bot de Telegram."""
 
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, BigInteger, Boolean, DateTime, func
+from sqlalchemy import Column, Integer, String, BigInteger, Boolean, DateTime, Float, func
 from sqlalchemy import true as sa_true
 
 from src.database import Base
@@ -41,3 +41,26 @@ class BotCommandStat(Base):
 
     def __repr__(self) -> str:
         return f"<BotCommandStat(command={self.command}, user_id={self.user_id})>"
+
+
+class BroadcastLog(Base):
+    """Una difusion de /ms (taso-bot#72 F3). Solo contadores: NUNCA el texto del mensaje.
+
+    shortcut: sin purga, una fila por difusion crece muy lento; podar si llegara a miles.
+    """
+
+    __tablename__ = "broadcast_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    admin_id = Column(BigInteger, nullable=False)
+    kind = Column(String(10), nullable=False)  # text | photo
+    segment = Column(String(30), nullable=False, default="todos", server_default="todos")
+    recipients = Column(Integer, nullable=False)
+    ok = Column(Integer, nullable=False)
+    blocked = Column(Integer, nullable=False)
+    errors = Column(Integer, nullable=False)
+    duration_s = Column(Float, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<BroadcastLog(id={self.id}, admin_id={self.admin_id}, recipients={self.recipients})>"

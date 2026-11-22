@@ -1,8 +1,8 @@
 """Pydantic schemas para estadísticas del bot."""
 
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Literal, Optional
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BotUserStats(BaseModel):
@@ -143,6 +143,48 @@ class ReachabilityResponse(BaseModel):
 
     ok: bool = Field(True, description="Estado de la respuesta")
     found: bool = Field(..., description="Si el usuario existia en bot_users")
+
+
+class BroadcastLogRequest(BaseModel):
+    """Request de POST /broadcasts: una difusion de /ms ya terminada. Sin texto del mensaje."""
+
+    admin_id: int = Field(..., description="ID de Telegram del admin que difundio")
+    kind: Literal["text", "photo"] = Field(..., description="Tipo de contenido difundido")
+    segment: str = Field("todos", max_length=30, description="A quien se difundio (hoy siempre 'todos')")
+    recipients: int = Field(..., ge=0, description="Usuarios a los que se intento escribir")
+    ok: int = Field(..., ge=0, description="Mensajes entregados")
+    blocked: int = Field(..., ge=0, description="Usuarios que habian bloqueado el bot")
+    errors: int = Field(..., ge=0, description="Envios que fallaron por otro motivo")
+    duration_s: float = Field(..., ge=0, description="Duracion de la difusion en segundos")
+
+
+class BroadcastLogResponse(BaseModel):
+    """Respuesta de POST /broadcasts."""
+
+    ok: bool = Field(True, description="Estado de la respuesta")
+
+
+class BroadcastLogItem(BaseModel):
+    """Una difusion del historial (GET /broadcasts)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    created_at: datetime = Field(..., description="Cuando termino la difusion (UTC)")
+    admin_id: int = Field(..., description="ID de Telegram del admin")
+    kind: str = Field(..., description="text | photo")
+    segment: str = Field(..., description="A quien se difundio")
+    recipients: int = Field(..., description="Usuarios a los que se intento escribir")
+    ok: int = Field(..., description="Mensajes entregados")
+    blocked: int = Field(..., description="Usuarios que habian bloqueado el bot")
+    errors: int = Field(..., description="Envios que fallaron por otro motivo")
+    duration_s: float = Field(..., description="Duracion en segundos")
+
+
+class BroadcastLogListResponse(BaseModel):
+    """Respuesta de GET /broadcasts: las difusiones mas recientes primero."""
+
+    ok: bool = Field(True, description="Estado de la respuesta")
+    data: list[BroadcastLogItem] = Field(default_factory=list, description="Difusiones, la mas reciente primero")
 
 
 class UserIdsResponse(BaseModel):
