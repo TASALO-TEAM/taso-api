@@ -206,6 +206,9 @@ async def get_api_usage(
 @router.get("/users/ids", response_model=UserIdsResponse)
 async def get_all_user_ids(
     solo_alcanzables: bool = Query(True, description="False incluye a quienes bloquearon el bot"),
+    segmento: Literal["todos", "activos", "alertas", "tspl", "year"] = Query(
+        "todos", description="Filtra la lista: activos (visto en 7 dias), alertas, tspl o year"
+    ),
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(require_auth),
 ) -> UserIdsResponse:
@@ -226,7 +229,9 @@ async def get_all_user_ids(
     Returns:
         UserIdsResponse: lista de user_id (Telegram)
     """
-    user_ids = await stats_service.get_all_user_ids(db, only_reachable=solo_alcanzables)
+    user_ids = await stats_service.get_all_user_ids(
+        db, only_reachable=solo_alcanzables, segment=segmento
+    )
     return UserIdsResponse(ok=True, data=user_ids)
 
 
