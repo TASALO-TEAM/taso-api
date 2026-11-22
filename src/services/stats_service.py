@@ -7,7 +7,7 @@ from sqlalchemy import select, func, and_, case, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models.bot_stats import BotUser, BotCommandStat
+from src.models.bot_stats import BotUser, BotCommandStat, BroadcastLog
 from src.models.api_request_log import ApiRequestLog
 from src.schemas.stats import (
     BotUserStats,
@@ -170,6 +170,39 @@ async def purge_unreachable_users(session: AsyncSession, days: int = 7) -> int:
     result = await session.execute(delete(BotUser).where(BotUser.user_id.in_(old)))
     await session.commit()
     return result.rowcount or 0
+
+
+async def log_broadcast(
+    session: AsyncSession,
+    admin_id: int,
+    kind: str,
+    segment: str,
+    recipients: int,
+    ok: int,
+    blocked: int,
+    errors: int,
+    duration_s: float,
+) -> None:
+    """
+    Registra una difusion de /ms ya terminada (taso-bot#72, Fase 3).
+
+    Guarda solo los contadores; el texto del mensaje no se recibe ni se guarda.
+    """
+    session.add(
+        BroadcastLog(
+            admin_id=admin_id, kind=kind, segment=segment, recipients=recipients,
+            ok=ok, blocked=blocked, errors=errors, duration_s=duration_s,
+        )
+    )
+    await session.commit()
+
+
+async def get_recent_broadcasts(session: AsyncSession, limit: int = 10) -> list[BroadcastLog]:
+    """Las ultimas difusiones de /ms, la mas reciente primero (taso-bot#72, Fase 3)."""
+    result = await session.execute(
+        select(BroadcastLog).order_by(BroadcastLog.id.desc()).limit(limit)
+    )
+    return list(result.scalars().all())
 
 
 async def get_user_stats(session: AsyncSession) -> BotUserStats:

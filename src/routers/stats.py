@@ -10,6 +10,10 @@ from src.database import get_db
 from src.middleware.auth import require_auth
 from src.schemas.stats import (
     BotStatsSummary,
+    BroadcastLogItem,
+    BroadcastLogListResponse,
+    BroadcastLogRequest,
+    BroadcastLogResponse,
     ReachabilityRequest,
     ReachabilityResponse,
     SeenUserRequest,
@@ -98,6 +102,39 @@ async def set_user_reachability(
         db, user_id=request.user_id, reachable=request.reachable
     )
     return ReachabilityResponse(ok=True, found=found)
+
+
+@router.post("/broadcasts", response_model=BroadcastLogResponse)
+async def log_broadcast(
+    request: BroadcastLogRequest,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(require_auth),
+) -> BroadcastLogResponse:
+    """
+    Registra una difusion de /ms ya terminada: solo contadores, nunca el texto.
+
+    Endpoint admin-only (X-API-Key). Lo llama taso-bot al terminar cada difusion
+    masiva (taso-bot#72, Fase 3).
+    """
+    await stats_service.log_broadcast(db, **request.model_dump())
+    return BroadcastLogResponse(ok=True)
+
+
+@router.get("/broadcasts", response_model=BroadcastLogListResponse)
+async def list_broadcasts(
+    limit: int = Query(10, ge=1, le=50, description="Cuantas difusiones devolver"),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(require_auth),
+) -> BroadcastLogListResponse:
+    """
+    Ultimas difusiones de /ms, la mas reciente primero (taso-bot#72, Fase 3).
+
+    Endpoint admin-only (X-API-Key). Lo consume `/ms historial` en taso-bot.
+    """
+    rows = await stats_service.get_recent_broadcasts(db, limit=limit)
+    return BroadcastLogListResponse(
+        ok=True, data=[BroadcastLogItem.model_validate(r) for r in rows]
+    )
 
 
 @router.get("/summary", response_model=BotStatsSummary)
