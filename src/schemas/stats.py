@@ -117,6 +117,20 @@ class TrackCommandResponse(BaseModel):
     message: str = Field("Comando trackeado", description="Mensaje de confirmación")
 
 
+class SeenUserRequest(BaseModel):
+    """Request de POST /users/seen: registrar que un usuario existe (no es un comando)."""
+
+    user_id: int = Field(..., description="ID del usuario (Telegram)")
+    username: Optional[str] = Field(None, max_length=100, description="Username del usuario")
+    first_name: Optional[str] = Field(None, max_length=100, description="Nombre del usuario")
+
+
+class SeenUserResponse(BaseModel):
+    """Respuesta de POST /users/seen."""
+
+    ok: bool = Field(True, description="Estado de la respuesta")
+
+
 class UserIdsResponse(BaseModel):
     """Lista de todos los user_id registrados en bot_users.
 
