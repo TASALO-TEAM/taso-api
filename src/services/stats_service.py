@@ -9,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.bot_stats import BotUser, BotCommandStat, BroadcastLog
 from src.models.api_request_log import ApiRequestLog
+from src.models.price_alert import PriceAlert
+from src.models.tspl_subscription import TsplSubscription
+from src.models.year_subscription import YearSubscription
 from src.schemas.stats import (
     BotUserStats,
     CommandUsageStats,
@@ -249,7 +252,13 @@ async def get_user_stats(session: AsyncSession) -> BotUserStats:
     )
 
 
-async def get_all_user_ids(session: AsyncSession, only_reachable: bool = True) -> list[int]:
+SEGMENTS = ("todos", "activos", "alertas", "tspl", "year")
+ACTIVE_DAYS = 7  # un usuario es "activo" si se le vio en los ultimos N dias
+
+
+async def get_all_user_ids(
+    session: AsyncSession, only_reachable: bool = True, segment: str = "todos"
+) -> list[int]:
     """
     Obtiene el user_id de TODOS los usuarios registrados en bot_users.
 
@@ -260,10 +269,23 @@ async def get_all_user_ids(session: AsyncSession, only_reachable: bool = True) -
     Returns:
         Lista de user_id (int), sin orden garantizado. Por defecto sin los que
         bloquearon el bot (is_reachable=False); only_reachable=False los incluye.
+        `segment` filtra: activos (visto en 7 dias), alertas (alerta de precio ACTIVE),
+        tspl o year (suscripcion). Un segmento desconocido lanza ValueError: nunca
+        se difunde a todos por un error de escritura (taso-bot#72 F4).
     """
+    if segment not in SEGMENTS:
+        raise ValueError(f"segmento desconocido: {segment!r}")
     stmt = select(BotUser.user_id)
     if only_reachable:
         stmt = stmt.where(BotUser.is_reachable.is_(True))
+    if segment == "activos":
+        stmt = stmt.where(BotUser.last_seen >= datetime.now(timezone.utc) - timedelta(days=ACTIVE_DAYS))
+    elif segment == "alertas":
+        stmt = stmt.where(BotUser.user_id.in_(select(PriceAlert.user_id).where(PriceAlert.status == "ACTIVE")))
+    elif segment == "tspl":
+        stmt = stmt.where(BotUser.user_id.in_(select(TsplSubscription.user_id)))
+    elif segment == "year":
+        stmt = stmt.where(BotUser.user_id.in_(select(YearSubscription.user_id)))
     result = await session.execute(stmt)
     return [row[0] for row in result.all()]
 
