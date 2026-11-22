@@ -10,6 +10,8 @@ from src.database import get_db
 from src.middleware.auth import require_auth
 from src.schemas.stats import (
     BotStatsSummary,
+    SeenUserRequest,
+    SeenUserResponse,
     TrackCommandRequest,
     TrackCommandResponse,
     UserIdsResponse,
@@ -53,6 +55,28 @@ async def track_command(
     )
 
     return TrackCommandResponse(ok=True, message="Comando trackeado")
+
+
+@router.post("/users/seen", response_model=SeenUserResponse)
+async def mark_user_seen(
+    request: SeenUserRequest,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(require_auth),
+) -> SeenUserResponse:
+    """
+    Registra que un usuario existe (upsert idempotente en bot_users).
+
+    Endpoint admin-only (X-API-Key). Lo llama taso-bot para todo usuario que
+    interactua, aunque no ejecute un comando que haga track (taso-bot#72,
+    Fase 1). No cuenta como comando: total_commands no sube.
+    """
+    await stats_service.mark_user_seen(
+        session=db,
+        user_id=request.user_id,
+        username=request.username,
+        first_name=request.first_name,
+    )
+    return SeenUserResponse(ok=True)
 
 
 @router.get("/summary", response_model=BotStatsSummary)

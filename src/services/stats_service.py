@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from sqlalchemy import select, func, and_, case
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.bot_stats import BotUser, BotCommandStat
@@ -80,6 +81,48 @@ async def track_command(
     )
     session.add(stat)
 
+    await session.commit()
+
+
+async def mark_user_seen(
+    session: AsyncSession,
+    user_id: int,
+    username: Optional[str] = None,
+    first_name: Optional[str] = None,
+) -> None:
+    """
+    Upsert idempotente en bot_users (taso-bot#72, Fase 1).
+
+    Registra que el usuario existe sin contarlo como comando: total_commands
+    no cambia y no se escribe en bot_command_stats. Un username/first_name
+    None no borra el valor ya conocido.
+    """
+    now = datetime.now(timezone.utc)
+    user = await session.get(BotUser, user_id)
+    if user is None:
+        session.add(
+            BotUser(
+                user_id=user_id,
+                username=username,
+                first_name=first_name,
+                first_seen=now,
+                last_seen=now,
+                total_commands=0,
+            )
+        )
+        try:
+            await session.commit()
+            return
+        except IntegrityError:
+            # Otro request inserto al mismo usuario a la vez: seguir como update.
+            await session.rollback()
+            user = await session.get(BotUser, user_id)
+
+    user.last_seen = now
+    if username:
+        user.username = username
+    if first_name:
+        user.first_name = first_name
     await session.commit()
 
 
