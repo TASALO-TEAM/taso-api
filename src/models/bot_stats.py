@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, BigInteger, Boolean, DateTime, Float, func
-from sqlalchemy import true as sa_true
+from sqlalchemy import true as sa_true, false as sa_false
 
 from src.database import Base
 
@@ -21,6 +21,8 @@ class BotUser(Base):
     # False = el usuario bloqueo el bot (taso-bot#72 F2). /ms no le escribe y la purga lo borra tras N dias.
     is_reachable = Column(Boolean, nullable=False, default=True, server_default=sa_true())
     unreachable_since = Column(DateTime(timezone=True), nullable=True)
+    # True = /silencio: no recibe difusiones masivas de /ms (taso-bot#72 F5). Alertas y suscripciones siguen.
+    is_muted = Column(Boolean, nullable=False, default=False, server_default=sa_false())
 
     def __repr__(self) -> str:
         return f"<BotUser(user_id={self.user_id}, username={self.username})>"

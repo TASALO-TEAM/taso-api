@@ -3,13 +3,15 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from sqlalchemy import select, func, and_, case, delete
+from sqlalchemy import select, func, and_, case, delete, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.bot_stats import BotUser, BotCommandStat, BroadcastLog
 from src.models.api_request_log import ApiRequestLog
+from src.models.image_alert import UserImageAlert
 from src.models.price_alert import PriceAlert
+from src.models.ticket import Ticket
 from src.models.tspl_subscription import TsplSubscription
 from src.models.year_subscription import YearSubscription
 from src.schemas.stats import (
@@ -175,6 +177,49 @@ async def purge_unreachable_users(session: AsyncSession, days: int = 7) -> int:
     return result.rowcount or 0
 
 
+ERASED_TICKET_TEXT = "[eliminado por el usuario]"
+
+
+async def set_user_muted(session: AsyncSession, user_id: int, muted: bool) -> bool:
+    """
+    Activa o quita el silencio del usuario (taso-bot#72, Fase 5). Silenciado = /ms masivo
+    no le escribe; sus alertas, suscripciones y avisos de tickets siguen igual.
+
+    Returns:
+        True si el usuario existia (no se crea si no esta en bot_users), False si no.
+    """
+    user = await session.get(BotUser, user_id)
+    if user is None:
+        return False
+    user.is_muted = muted
+    await session.commit()
+    return True
+
+
+async def erase_user_data(session: AsyncSession, user_id: int) -> dict:
+    """
+    Derecho al olvido (taso-bot#72, Fase 5): borra al usuario de bot_users, sus
+    estadisticas, alertas de precio e imagen y suscripciones /tspl y /y. Sus tickets
+    se ANONIMIZAN (user_id=0, sin username, mensaje reemplazado) para conservar el
+    historial de soporte; los abiertos tambien. No es un veto: si vuelve a escribir,
+    el registro automatico lo crea de nuevo. Las copias de seguridad no se tocan.
+
+    Returns:
+        {"deleted_rows": filas borradas, "tickets_anonymized": tickets anonimizados}
+    """
+    deleted = 0
+    for model in (BotCommandStat, UserImageAlert, PriceAlert, TsplSubscription, YearSubscription, BotUser):
+        result = await session.execute(delete(model).where(model.user_id == user_id))
+        deleted += result.rowcount or 0
+    tickets = await session.execute(
+        update(Ticket)
+        .where(Ticket.user_id == user_id)
+        .values(user_id=0, username=None, message=ERASED_TICKET_TEXT)
+    )
+    await session.commit()
+    return {"deleted_rows": deleted, "tickets_anonymized": tickets.rowcount or 0}
+
+
 async def log_broadcast(
     session: AsyncSession,
     admin_id: int,
@@ -257,7 +302,7 @@ ACTIVE_DAYS = 7  # un usuario es "activo" si se le vio en los ultimos N dias
 
 
 async def get_all_user_ids(
-    session: AsyncSession, only_reachable: bool = True, segment: str = "todos"
+    session: AsyncSession, only_reachable: bool = True, segment: str = "todos", skip_muted: bool = True
 ) -> list[int]:
     """
     Obtiene el user_id de TODOS los usuarios registrados en bot_users.
@@ -278,6 +323,8 @@ async def get_all_user_ids(
     stmt = select(BotUser.user_id)
     if only_reachable:
         stmt = stmt.where(BotUser.is_reachable.is_(True))
+    if skip_muted:
+        stmt = stmt.where(BotUser.is_muted.is_(False))  # /silencio (taso-bot#72 F5)
     if segment == "activos":
         stmt = stmt.where(BotUser.last_seen >= datetime.now(timezone.utc) - timedelta(days=ACTIVE_DAYS))
     elif segment == "alertas":
