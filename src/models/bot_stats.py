@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, BigInteger, Boolean, DateTime, func
+from sqlalchemy import true as sa_true
 
 from src.database import Base
 
@@ -17,6 +18,9 @@ class BotUser(Base):
     first_seen = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     last_seen = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     total_commands = Column(Integer, nullable=False, default=0)
+    # False = el usuario bloqueo el bot (taso-bot#72 F2). /ms no le escribe y la purga lo borra tras N dias.
+    is_reachable = Column(Boolean, nullable=False, default=True, server_default=sa_true())
+    unreachable_since = Column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:
         return f"<BotUser(user_id={self.user_id}, username={self.username})>"

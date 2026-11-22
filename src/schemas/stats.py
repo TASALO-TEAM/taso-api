@@ -131,6 +131,20 @@ class SeenUserResponse(BaseModel):
     ok: bool = Field(True, description="Estado de la respuesta")
 
 
+class ReachabilityRequest(BaseModel):
+    """Request de POST /users/reachability: el usuario bloqueo (False) o desbloqueo (True) el bot."""
+
+    user_id: int = Field(..., description="ID del usuario (Telegram)")
+    reachable: bool = Field(..., description="False = bloqueo el bot; True = lo desbloqueo")
+
+
+class ReachabilityResponse(BaseModel):
+    """Respuesta de POST /users/reachability. `found` es False si el usuario no esta en bot_users."""
+
+    ok: bool = Field(True, description="Estado de la respuesta")
+    found: bool = Field(..., description="Si el usuario existia en bot_users")
+
+
 class UserIdsResponse(BaseModel):
     """Lista de todos los user_id registrados en bot_users.
 

@@ -270,6 +270,37 @@ def init_rates_retention_scheduler(
     logger.info("✅ [Scheduler] Rates retention job added (03:10 UTC)")
 
 
+def init_users_purge_scheduler(
+    scheduler: AsyncIOScheduler,
+    db_factory: Callable[[], AsyncSession],
+) -> None:
+    """Purga diaria de usuarios inalcanzables (bloquearon el bot hace mas de 7 dias).
+    Borra bot_users y bot_command_stats; no toca
+    alertas ni suscripciones. taso-bot#72, Fase 2. Corre a las 03:20 UTC."""
+    from src.services import stats_service
+
+    async def purge_unreachable_job() -> None:
+        db = db_factory()
+        try:
+            async with db:
+                deleted = await stats_service.purge_unreachable_users(db, days=7)
+                logger.info("[Scheduler] Purga de usuarios inalcanzables: %s borrados", deleted)
+        except Exception:
+            logger.exception("Purga de usuarios inalcanzables fallo")
+
+    scheduler.add_job(
+        purge_unreachable_job,
+        trigger="cron",
+        hour=3,
+        minute=20,
+        timezone="UTC",
+        id="users_unreachable_purge",
+        name="Purga de usuarios inalcanzables (>7 dias)",
+        replace_existing=True,
+    )
+    logger.info("[Scheduler] Users purge job added (03:20 UTC)")
+
+
 async def refresh_all(db_factory: Callable) -> None:
     """Job que se ejecuta periódicamente: scrapers → persistencia → history → scheduler_status."""
     logger.info(f"🔄 [Scheduler] Iniciando refresh_all")
