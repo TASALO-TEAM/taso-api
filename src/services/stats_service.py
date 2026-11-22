@@ -3,7 +3,7 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from sqlalchemy import select, func, and_, case
+from sqlalchemy import select, func, and_, case, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -119,11 +119,57 @@ async def mark_user_seen(
             user = await session.get(BotUser, user_id)
 
     user.last_seen = now
+    # Si escribe de nuevo, esta alcanzable (desbloqueo sin que llegara my_chat_member).
+    user.is_reachable = True
+    user.unreachable_since = None
     if username:
         user.username = username
     if first_name:
         user.first_name = first_name
     await session.commit()
+
+
+async def set_user_reachability(session: AsyncSession, user_id: int, reachable: bool) -> bool:
+    """
+    Marca si el usuario puede recibir mensajes (taso-bot#72, Fase 2).
+
+    False = bloqueo el bot: guarda desde cuando (la primera vez; un bloqueo repetido
+    no mueve la fecha). True = desbloqueo: limpia la fecha. Un usuario que no esta
+    en bot_users no se crea (no hay a quien escribirle en /ms de todos modos).
+
+    Returns:
+        True si el usuario existia, False si no.
+    """
+    user = await session.get(BotUser, user_id)
+    if user is None:
+        return False
+    if reachable:
+        user.is_reachable = True
+        user.unreachable_since = None
+    elif user.is_reachable:
+        user.is_reachable = False
+        user.unreachable_since = datetime.now(timezone.utc)
+    await session.commit()
+    return True
+
+
+async def purge_unreachable_users(session: AsyncSession, days: int = 7) -> int:
+    """
+    Borra de bot_users a quienes llevan mas de `days` dias inalcanzables, junto con
+    sus filas de bot_command_stats. NO toca alertas ni suscripciones (otras tablas),
+    asi que si desbloquea despues conserva lo que habia configurado.
+
+    Returns:
+        Cantidad de usuarios borrados.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    old = select(BotUser.user_id).where(
+        BotUser.is_reachable.is_(False), BotUser.unreachable_since < cutoff
+    )
+    await session.execute(delete(BotCommandStat).where(BotCommandStat.user_id.in_(old)))
+    result = await session.execute(delete(BotUser).where(BotUser.user_id.in_(old)))
+    await session.commit()
+    return result.rowcount or 0
 
 
 async def get_user_stats(session: AsyncSession) -> BotUserStats:
@@ -170,7 +216,7 @@ async def get_user_stats(session: AsyncSession) -> BotUserStats:
     )
 
 
-async def get_all_user_ids(session: AsyncSession) -> list[int]:
+async def get_all_user_ids(session: AsyncSession, only_reachable: bool = True) -> list[int]:
     """
     Obtiene el user_id de TODOS los usuarios registrados en bot_users.
 
@@ -179,9 +225,12 @@ async def get_all_user_ids(session: AsyncSession) -> list[int]:
     envío masivo desde el propio bot con la admin_key configurada.
 
     Returns:
-        Lista de user_id (int), sin orden garantizado.
+        Lista de user_id (int), sin orden garantizado. Por defecto sin los que
+        bloquearon el bot (is_reachable=False); only_reachable=False los incluye.
     """
     stmt = select(BotUser.user_id)
+    if only_reachable:
+        stmt = stmt.where(BotUser.is_reachable.is_(True))
     result = await session.execute(stmt)
     return [row[0] for row in result.all()]
 

@@ -22,7 +22,7 @@ from src.routers import admin as admin_router
 from src.routers import db_admin as db_admin_router
 from src.routers import stats as stats_router
 from src.routers import images as images_router
-from src.services.scheduler import create_scheduler, init_scheduler_status, init_image_capture_scheduler, init_year_scheduler, init_rates_retention_scheduler
+from src.services.scheduler import create_scheduler, init_scheduler_status, init_image_capture_scheduler, init_year_scheduler, init_rates_retention_scheduler, init_users_purge_scheduler
 from src.routers import year as year_router
 from src.routers import alerts as alerts_router
 from src.routers import ads as ads_router
@@ -191,6 +191,12 @@ async def lifespan(app: FastAPI):
         logger.info("✅ [Startup] Rates retention scheduler initialized")
     except Exception as e:
         logger.warning("⚠️ Rates retention scheduler init failed: %s", e)
+
+    # Purga diaria de usuarios inalcanzables (taso-bot#72 F2), no-fatal
+    try:
+        init_users_purge_scheduler(scheduler, database.async_session_factory)
+    except Exception as e:
+        logger.warning("Users purge scheduler init failed: %s", e)
 
     # Seed year quotes from JSON if table is empty
     from src.services import year_service

@@ -10,6 +10,8 @@ from src.database import get_db
 from src.middleware.auth import require_auth
 from src.schemas.stats import (
     BotStatsSummary,
+    ReachabilityRequest,
+    ReachabilityResponse,
     SeenUserRequest,
     SeenUserResponse,
     TrackCommandRequest,
@@ -77,6 +79,25 @@ async def mark_user_seen(
         first_name=request.first_name,
     )
     return SeenUserResponse(ok=True)
+
+
+@router.post("/users/reachability", response_model=ReachabilityResponse)
+async def set_user_reachability(
+    request: ReachabilityRequest,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(require_auth),
+) -> ReachabilityResponse:
+    """
+    Marca que un usuario bloqueo (reachable=false) o desbloqueo (true) el bot.
+
+    Endpoint admin-only (X-API-Key). Lo llama taso-bot desde my_chat_member y
+    cuando un envio falla con Forbidden (taso-bot#72, Fase 2). Si el usuario no
+    esta en bot_users no se crea: responde found=false.
+    """
+    found = await stats_service.set_user_reachability(
+        db, user_id=request.user_id, reachable=request.reachable
+    )
+    return ReachabilityResponse(ok=True, found=found)
 
 
 @router.get("/summary", response_model=BotStatsSummary)
@@ -147,6 +168,7 @@ async def get_api_usage(
 
 @router.get("/users/ids", response_model=UserIdsResponse)
 async def get_all_user_ids(
+    solo_alcanzables: bool = Query(True, description="False incluye a quienes bloquearon el bot"),
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(require_auth),
 ) -> UserIdsResponse:
@@ -167,7 +189,7 @@ async def get_all_user_ids(
     Returns:
         UserIdsResponse: lista de user_id (Telegram)
     """
-    user_ids = await stats_service.get_all_user_ids(db)
+    user_ids = await stats_service.get_all_user_ids(db, only_reachable=solo_alcanzables)
     return UserIdsResponse(ok=True, data=user_ids)
 
 
