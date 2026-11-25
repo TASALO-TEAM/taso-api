@@ -1,6 +1,7 @@
 """TASALO API - Aplicación principal FastAPI."""
 
 import asyncio
+import os
 import logging
 import subprocess
 import sys
@@ -29,6 +30,8 @@ from src.routers import ads as ads_router
 from src.routers import app_messages as app_messages_router
 from src.routers import tickets as tickets_router
 from src.routers import tspl as tspl_router
+from src.routers import liquidations as liquidations_router
+from src.services.liq_collector import LiqCollector
 from src.logging_config import setup_logging
 from src.services.alert_notifier import notify as notify_support_group
 from src.version import VERSION
@@ -215,12 +218,24 @@ async def lifespan(app: FastAPI):
 
     app.state.scheduler = scheduler
 
+    # Colector de liquidaciones (taso-bot M3b). Un solo proceso uvicorn: no se duplica.
+    if os.getenv("LIQ_COLLECTOR_ENABLED", "1") != "0":
+        try:
+            app.state.liq_collector = LiqCollector(app.state.db)
+            await app.state.liq_collector.start()
+            logger.info("Liquidaciones: colector iniciado")
+        except Exception as _e:
+            logger.warning("Liquidaciones: colector no iniciado: %s", _e)
+
     # Aviso de arranque al grupo de soporte (mismo patrón que taso-gcg/taso-bot)
     await notify_support_group(f"🚀 taso-api v{API_VERSION} ({_GIT_BUILD_INFO['commit']}) en línea.")
 
     yield
 
     # Shutdown
+    _liq = getattr(app.state, "liq_collector", None)
+    if _liq is not None:
+        await _liq.stop()
     logger.info("🛑 [Shutdown] Deteniendo scheduler...")
     scheduler.shutdown(wait=False)
     logger.info("✅ [Shutdown] Scheduler detenido")
@@ -292,6 +307,7 @@ app.include_router(app_messages_router.router, prefix="/api/v1/app", tags=["App 
 app.include_router(app_messages_router.admin_router, prefix="/api/v1/app", tags=["App Messages Admin"])
 app.include_router(tickets_router.router, prefix="/api/v1/tickets", tags=["Tickets"])
 app.include_router(tspl_router.router, prefix="/api/v1/tspl", tags=["Tspl"])
+app.include_router(liquidations_router.router, prefix="/api/v1/liquidaciones", tags=["Liquidaciones"])
 
 
 @app.get("/api/v1/health", tags=["Health"])

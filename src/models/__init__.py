@@ -12,6 +12,7 @@ from src.models.ticket import Ticket
 from src.models.api_request_log import ApiRequestLog
 from src.models.tspl_subscription import TsplSubscription
 from src.models.app_message import AppMessage
+from src.models.liquidation import LiquidationBucket
 
 __all__ = [
     "RateSnapshot", "SchedulerStatus",
