@@ -144,59 +144,9 @@ async def init_year_scheduler(
     scheduler: AsyncIOScheduler,
     db_factory: Callable[[], AsyncSession]
 ) -> None:
-    """Year daily alert + new year greeting job."""
+    """Saludo de Ano Nuevo (diario). Los avisos de /y los despacha el bot a las :00 UTC;
+    la API ya no registra un cron por minuto que solo escribia en el log."""
     from src.services import year_service
-
-    async def year_daily_job() -> None:
-        db = db_factory()
-        try:
-            async with db:
-                subs = await year_service.get_enabled_subscriptions(db)
-                if not subs:
-                    return
-                now = datetime.now(timezone.utc)
-                progress = await year_service.get_year_progress()
-                bar = year_service.generate_progress_bar(progress.percent, length=20)
-                status_mood = (
-                    "🍀 Recién estamos empezando..." if progress.percent < 2
-                    else "🌱 Arrancando motores..." if progress.percent < 10
-                    else "🏃‍♂️ Aún hay tiempo de cumplir propósitos." if progress.percent < 50
-                    else "🔥 ¡Se nos va el año!" if progress.percent < 80
-                    else "🏁 Recta final, ¡agárrate!"
-                )
-                daily = await year_service.get_daily_quote(db)
-
-                for sub in subs:
-                    if sub.hour != now.hour:
-                        continue
-                    user_id = sub.user_id
-                    msg = (
-                        f"🗓 *ESTADO DEL AÑO {progress.year}*\n"
-                        f"•••\n"
-                        f"📆 *Fecha:* {progress.date_str}\n"
-                        f"⏳ *Progreso:* `{progress.percent:.2f}%`\n"
-                        f"📊 `{bar}`\n\n"
-                        f"🔚 Faltan *{progress.days_left} días* para {progress.year + 1}.\n"
-                        f"💭 _{status_mood}_\n"
-                        f"•••\n"
-                        f"💡 *Frase Del Día:*\n"
-                        f'"{daily.quote}"'
-                    )
-                    logger.info("📨 Year alert due for user %s (UTC hour %s)", user_id, now.hour)
-        except Exception:
-            logger.exception("❌ Year daily job failed")
-
-    # Run every minute — checks subscriptions and dispatches only at matching UTC hour
-    scheduler.add_job(
-        year_daily_job,
-        trigger="cron",
-        minute="*",
-        timezone="UTC",
-        id="year_daily_alert",
-        name="Year daily progress alert",
-        replace_existing=True,
-    )
-    logger.info("✅ [Scheduler] Year daily alert job added (checks every minute)")
 
     async def year_new_year_job() -> None:
         """Daily at midnight UTC: check Jan 1, add greeting if missing, set extra flag."""
