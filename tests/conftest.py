@@ -11,6 +11,8 @@ from sqlalchemy.orm import sessionmaker
 # al grupo de soporte de verdad. Vacios, notify() sale por su guard.
 os.environ["LOG_BOT_TOKEN"] = ""
 os.environ["LOG_CHAT_ID"] = ""
+# El lifespan real tambien arrancaria el colector de liquidaciones (websockets a internet).
+os.environ["LIQ_COLLECTOR_ENABLED"] = "0"
 
 from src.database import Base
 from src.main import app
