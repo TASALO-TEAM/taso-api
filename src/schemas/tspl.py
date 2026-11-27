@@ -22,3 +22,18 @@ class TsplSubscriptionListResponse(BaseModel):
     ok: bool = True
     data: list[TsplSubscriptionResponse]
     count: int
+
+
+class TsplDigestPut(BaseModel):
+    """Body de PUT /tspl/digest/latest (lo envía taso-bot al generar el digest)."""
+    telegram_text: str = Field(..., min_length=1, max_length=4096)
+    blog_markdown: str | None = Field(default=None, max_length=100_000)
+    generated_at: datetime
+
+
+class TsplDigestResponse(BaseModel):
+    ok: bool = True
+    telegram_text: str
+    blog_markdown: str | None = None
+    generated_at: datetime
+    updated_at: datetime

@@ -5,9 +5,12 @@ solo guarda uno. Ver docs/plans/2026-07-24-tspl-suscripcion-horarios.md
 """
 
 import logging
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models.tspl_digest import DIGEST_ROW_ID, TsplDigest
 from src.models.tspl_subscription import TsplSubscription
 from src.schemas.tspl import TsplSubscriptionResponse, TsplSubscriptionListResponse
 
@@ -97,3 +100,35 @@ async def get_all_subscriptions(db: AsyncSession) -> TsplSubscriptionListRespons
         ],
         count=len(rows),
     )
+
+
+# -- Digest diario (taso-bot lo empuja, taso-gcg lo publica) --------------------------------
+
+
+async def save_digest(
+    db: AsyncSession,
+    telegram_text: str,
+    blog_markdown: str | None,
+    generated_at,
+):
+    """Guarda (reemplaza) el último digest. Una sola fila: id=1."""
+    fila = await db.get(TsplDigest, DIGEST_ROW_ID)
+    if fila is None:
+        fila = TsplDigest(id=DIGEST_ROW_ID)
+        db.add(fila)
+    fila.telegram_text = telegram_text
+    fila.blog_markdown = blog_markdown
+    fila.generated_at = generated_at
+    fila.updated_at = datetime.now(timezone.utc)
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    await db.refresh(fila)
+    return fila
+
+
+async def get_digest(db: AsyncSession):
+    """Último digest guardado, o None si taso-bot aún no ha empujado ninguno."""
+    return await db.get(TsplDigest, DIGEST_ROW_ID)

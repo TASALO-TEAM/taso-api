@@ -13,10 +13,12 @@ from src.models.api_request_log import ApiRequestLog
 from src.models.tspl_subscription import TsplSubscription
 from src.models.app_message import AppMessage
 from src.models.liquidation import LiquidationBucket
+from src.models.tspl_digest import TsplDigest
 
 __all__ = [
     "RateSnapshot", "SchedulerStatus",
     "ImageSnapshot", "UserImageAlert",
     "YearQuote", "YearSubscription", "YearExtraFlag",
     "Ad", "Ticket", "ApiRequestLog", "TsplSubscription", "AppMessage",
+    "TsplDigest",
 ]
