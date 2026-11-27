@@ -13,6 +13,8 @@ from src.database import get_db
 from src.middleware.auth import require_auth, require_auth_user_endpoints
 from src.services import tspl_service
 from src.schemas.tspl import (
+    TsplDigestPut,
+    TsplDigestResponse,
     TsplSubscriptionCreate,
     TsplSubscriptionResponse,
     TsplSubscriptionListResponse,
@@ -89,3 +91,39 @@ async def list_all_subscriptions(
     """Lista TODAS las suscripciones de todos los usuarios — usado por el
     dispatcher horario de taso-bot (tspl_alert_dispatcher.py)."""
     return await tspl_service.get_all_subscriptions(db)
+
+
+# -- Digest diario: taso-bot lo empuja (PUT), taso-gcg lo lee (GET). Ambos con X-API-Key ----
+
+
+def _digest_response(fila) -> TsplDigestResponse:
+    return TsplDigestResponse(
+        ok=True,
+        telegram_text=fila.telegram_text,
+        blog_markdown=fila.blog_markdown,
+        generated_at=fila.generated_at,
+        updated_at=fila.updated_at,
+    )
+
+
+@router.put("/digest/latest", response_model=TsplDigestResponse)
+async def put_latest_digest(
+    body: TsplDigestPut,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(require_auth),
+):
+    """Guarda (reemplaza) el último digest generado por taso-bot."""
+    fila = await tspl_service.save_digest(db, body.telegram_text, body.blog_markdown, body.generated_at)
+    return _digest_response(fila)
+
+
+@router.get("/digest/latest", response_model=TsplDigestResponse)
+async def get_latest_digest(
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(require_auth),
+):
+    """Último digest guardado. 404 si taso-bot todavía no ha empujado ninguno."""
+    fila = await tspl_service.get_digest(db)
+    if fila is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No hay digest guardado todavía")
+    return _digest_response(fila)
